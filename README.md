@@ -17,10 +17,19 @@ From the repository root:
 docker build -f docker/Dockerfile.dev -t navigoat:dev .
 ```
 
+### Start the container from a terminal
+
+From the repository root, allow the container to open GUI applications and start it:
+
+```bash
+xhost +si:localuser:root
+docker run --rm -it --name navigoat-dev --network=host -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+```
+
 ### Open in VS Code
 
 1. Open the repository folder in VS Code.
-2. Run **Dev Containers: Reopen in Container** from the Command Palette. VS Code builds the image automatically if needed.
+2. Run Dev Containers: Reopen in Container from the Command Palette. VS Code builds the image automatically if needed.
 
 ### Open the running container in a terminal
 
@@ -32,27 +41,4 @@ docker ps
 docker exec -it <CONTAINER_NAME> bash
 ```
 
-
-## Simulation
-### Gazebo
-
-Inside the Dev Container, build the Pioneer package once:
-
-```bash
-colcon build --packages-up-to p2os_urdf --symlink-install
-source install/setup.bash
-```
-
-Start Gazebo and spawn the Pioneer 3-AT:
-
-```bash
-ros2 launch /workspace/src/simulation/launch/gazebo.launch.py
-```
-
-In another container terminal, start keyboard control:
-
-```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/model/pioneer3at/cmd_vel
-```
-
-Keep the keyboard terminal focused. Press `i` to drive forwards, `,` to drive backwards, `j` or `l` to turn and `k` to stop.
+## [Simulation](src/simulation/README.md)
