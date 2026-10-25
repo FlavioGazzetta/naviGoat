@@ -1,0 +1,3 @@
+[submodule "src/hardware/base/p2os2"]
+	path = src/hardware/base/p2os2
+	url = https://github.com/pondersome/p2os2.git

@@ -1,0 +1,8 @@
+.git
+.env
+.devcontainer
+build
+install
+log
+**/__pycache__
+**/.pytest_cache
