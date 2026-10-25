@@ -31,3 +31,28 @@ docker build -f docker/Dockerfile.dev -t navigoat:dev .
 docker ps
 docker exec -it <CONTAINER_NAME> bash
 ```
+
+
+## Simulation
+### Gazebo
+
+Inside the Dev Container, build the Pioneer package once:
+
+```bash
+colcon build --packages-up-to p2os_urdf --symlink-install
+source install/setup.bash
+```
+
+Start Gazebo and spawn the Pioneer 3-AT:
+
+```bash
+ros2 launch /workspace/src/simulation/launch/gazebo.launch.py
+```
+
+In another container terminal, start keyboard control:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/model/pioneer3at/cmd_vel
+```
+
+Keep the keyboard terminal focused. Press `i` to drive forwards, `,` to drive backwards, `j` or `l` to turn and `k` to stop.
