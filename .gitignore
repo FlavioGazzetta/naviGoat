@@ -5,5 +5,5 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-/src/simulation/maps/*
-!/src/simulation/maps/.gitkeep
+/ros/src/simulation/maps/*
+!/ros/src/simulation/maps/.gitkeep

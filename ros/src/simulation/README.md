@@ -1,7 +1,7 @@
 # Simulation
 ## Gazebo
 
-Inside the Dev Container, build the Pioneer package once:
+Inside the Dev Container, build the Pioneer package once from `/workspace`:
 
 ```bash
 colcon build --packages-up-to p2os_urdf --symlink-install
@@ -11,7 +11,7 @@ source install/setup.bash
 Start Gazebo and spawn the Pioneer 3-AT:
 
 ```bash
-ros2 launch /workspace/src/simulation/launch/gazebo.launch.py
+ros2 launch /workspace/ros/src/simulation/launch/gazebo.launch.py
 ```
 
 In another container terminal, start keyboard control:
@@ -29,17 +29,17 @@ Keep the keyboard terminal focused. Press `i` to drive forwards, `,` to drive ba
 To start Gazebo, RTAB-Map and RViz together instead of the Gazebo command above:
 
 ```bash
-ros2 launch /workspace/src/simulation/launch/simulation.launch.py
+ros2 launch /workspace/ros/src/simulation/launch/simulation.launch.py
 ```
 
-Drive the Pioneer using the keyboard command above in another terminal, then return near the starting point to test loop closure. RTAB-Map saves the map to `src/simulation/maps/rtabmap.db`.
+Drive the Pioneer using the keyboard command above in another terminal, then return near the starting point to test loop closure. RTAB-Map saves the map to `ros/src/simulation/maps/rtabmap.db` relative to the repository root.
 
 ### Localisation
 
 After stopping the mapping launch and saving the map, restart Gazebo, RTAB-Map and RViz in localisation mode:
 
 ```bash
-ros2 launch /workspace/src/simulation/launch/simulation.launch.py mode:=localisation
+ros2 launch /workspace/ros/src/simulation/launch/simulation.launch.py mode:=localisation
 ```
 
 Drive through the mapped area using the keyboard command above. RTAB-Map uses the saved map without adding new map points.

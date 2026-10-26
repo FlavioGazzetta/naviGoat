@@ -41,4 +41,4 @@ docker ps
 docker exec -it <CONTAINER_NAME> bash
 ```
 
-## [Simulation](src/simulation/README.md)
+## [Simulation](ros/src/simulation/README.md)
