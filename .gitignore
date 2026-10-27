@@ -7,3 +7,4 @@ __pycache__/
 .pytest_cache/
 /ros/src/simulation/maps/*
 !/ros/src/simulation/maps/.gitkeep
+/weights/
