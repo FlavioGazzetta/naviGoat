@@ -1,9 +1,11 @@
-FROM osrf/ros:jazzy-desktop-full-noble
+# Jetson: ros:jazzy-perception-noble
+ARG BASE_IMAGE=osrf/ros:jazzy-desktop-full-noble
+FROM ${BASE_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends neovim tree ros-jazzy-rtabmap-ros && rm -rf /var/lib/apt/lists/*
 
 ARG PETE=false
-# On a Jetson, set this to NVIDIA's PyTorch index; the default pip PyTorch cannot use the Jetson GPU.
+# Jetson: https://pypi.jetson-ai-lab.io/sbsa/cu132
 ARG TORCH_INDEX=
 ENV PETE_YOLO_MODEL=/opt/models/yolov8s-worldv2.pt OLLAMA_MODELS=/opt/models/ollama
 RUN if [ "$PETE" = "true" ]; then \
@@ -18,7 +20,6 @@ RUN if [ "$PETE" = "true" ]; then \
 
 RUN printf '\nsource /opt/ros/jazzy/setup.bash\nif [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; fi\n' >> /etc/bash.bashrc
 
-# Start Pete's vision model in the background in every shell, unless it is already running.
 RUN printf '\nif command -v ollama > /dev/null && ! pgrep -x ollama > /dev/null; then (ollama serve > /tmp/ollama.log 2>&1 &); fi\n' >> /etc/bash.bashrc
 
 WORKDIR /workspace
