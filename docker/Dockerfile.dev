@@ -5,15 +5,12 @@ FROM ${BASE_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends neovim tree ros-jazzy-rtabmap-ros && rm -rf /var/lib/apt/lists/*
 
 ARG PETE=false
-# Jetson: https://pypi.jetson-ai-lab.io/sbsa/cu132
-ARG TORCH_INDEX=
 ENV PETE_YOLO_MODEL=/opt/models/yolov8s-worldv2.pt OLLAMA_MODELS=/opt/models/ollama
 RUN if [ "$PETE" = "true" ]; then \
         apt-get update && apt-get install -y --no-install-recommends python3-pip git curl zstd && rm -rf /var/lib/apt/lists/* && \
         curl -fsSL https://ollama.com/install.sh | sh && \
         (ollama serve > /dev/null 2>&1 &) && sleep 5 && ollama pull qwen3-vl:2b-instruct && \
         pip install --no-cache-dir --break-system-packages --ignore-installed "numpy<2" ultralytics git+https://github.com/ultralytics/CLIP.git && \
-        if [ -n "$TORCH_INDEX" ]; then pip install --no-cache-dir --break-system-packages --ignore-installed --no-deps --pre --index-url "$TORCH_INDEX" torch torchvision; fi && \
         yolo settings weights_dir=/opt/models/weights && \
         mkdir -p /opt/models && cd /opt/models && python3 -c "from ultralytics import YOLOWorld; YOLOWorld('yolov8s-worldv2.pt').set_classes(['chair'])"; \
     fi

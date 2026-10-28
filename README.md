@@ -26,7 +26,7 @@ xhost +si:localuser:root
 docker run --rm -it --name navigoat-dev --network=host -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 ```
 
-For Pete ([ros/src/autonomy/perception/classification.py](ros/src/autonomy/perception/classification.py)) build with `--build-arg PETE=true` (adds YOLO-World and PyTorch, several GB), pass the camera and GPU, and run Ollama on the host (`ollama serve`); the container reaches it through the host network. `--gpus all` needs the NVIDIA Container Toolkit.
+For Pete (object finding and scene description), build with `--build-arg PETE=true` and pass the camera and GPU. `--gpus all` needs the NVIDIA Container Toolkit. See [ros/src/autonomy/perception/README.md](ros/src/autonomy/perception/README.md), including the Jetson build.
 
 ```bash
 docker run --rm -it --name navigoat-dev --network=host --gpus all --device /dev/video0 -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash

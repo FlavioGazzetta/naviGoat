@@ -14,7 +14,7 @@ The vision model runs locally through Ollama (https://ollama.com):
     ollama pull qwen3-vl:2b-instruct   # 1.9 GB; qwen3-vl:4b-instruct is better but tight on an 8 GB Orin Nano
 Use the -instruct tags: the plain tags are thinking models that reason before answering, which is too slow here.
 
-ROS 2, inside the repo's container (Ollama runs on the host; the container shares its network):
+ROS 2, inside the repo's container built with PETE=true (Ollama and the model are in the image):
     python3 /workspace/ros/src/autonomy/perception/classification.py --ros-args -p use_webcam:=true -p enable_drive:=true
 
 Driving publishes to /cmd_vel, which is what p2os_driver listens to on the real robot.
@@ -41,8 +41,13 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import warnings
 
 import cv2
+
+# Harmless on the Jetson: the sm_80 build runs fine on the Orin.
+warnings.filterwarnings('ignore', message='Found GPU0 Orin')
+warnings.filterwarnings('ignore', message='`torch.jit.load` is deprecated')
 
 OLLAMA_URL = 'http://localhost:11434/api/chat'
 VLM_MODEL = 'qwen3-vl:2b-instruct'
