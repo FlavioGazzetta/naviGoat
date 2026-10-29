@@ -1,0 +1,104 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Name: RobotModel
+      Value: true
+      Visual Enabled: true
+    - Class: rviz_default_plugins/PointCloud2
+      Color Transformer: AxisColor
+      Axis: Z
+      Enabled: true
+      Name: Live lidar
+      Position Transformer: XYZ
+      Size (Pixels): 2
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /unilidar/cloud
+      Value: true
+    - Class: rviz_default_plugins/PointCloud2
+      Color Transformer: AxisColor
+      Axis: Z
+      Enabled: true
+      Name: 3D map
+      Position Transformer: XYZ
+      Size (Pixels): 2
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /cloud_map
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: SLAM trajectory
+      Color: 0; 255; 255
+      Line Style: Lines
+      Line Width: 0.03
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mapPath
+      Value: true
+    - Class: rviz_default_plugins/Odometry
+      Enabled: true
+      Name: Odometry trail
+      Keep: 3000
+      Position Tolerance: 0.01
+      Angle Tolerance: 0.01
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odom
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Name: TF
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 8
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Name: Current View
+      Pitch: 0.6
+      Target Frame: map
+      Yaw: 0.8

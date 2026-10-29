@@ -1,0 +1,23 @@
+icp_odometry:
+  ros__parameters:
+    use_sim_time: false
+    frame_id: base_link
+    odom_frame_id: odom
+    publish_tf: true
+    wait_imu_to_init: true
+    qos: 1
+    qos_imu: 1
+    Reg/Strategy: '1'
+    Icp/Strategy: '1'
+    Icp/PointToPlane: 'true'
+    Icp/PointToPlaneK: '20'
+    Icp/PointToPlaneRadius: '0'
+    Icp/VoxelSize: '0.1'
+    Icp/Iterations: '10'
+    Icp/Epsilon: '0.001'
+    Icp/MaxCorrespondenceDistance: '0.5'
+    Icp/OutlierRatio: '0.7'
+    Odom/GuessMotion: 'false'
+    Odom/ScanKeyFrameThr: '0.4'
+    OdomF2M/ScanSubtractRadius: '0.1'
+    OdomF2M/ScanMaxSize: '15000'

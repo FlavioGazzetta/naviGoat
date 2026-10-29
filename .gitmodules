@@ -1,3 +1,6 @@
 [submodule "ros/src/hardware/base/p2os2"]
 	path = ros/src/hardware/base/p2os2
 	url = https://github.com/pondersome/p2os2.git
+[submodule "ros/src/hardware/lidar/unilidar_sdk"]
+	path = ros/src/hardware/lidar/unilidar_sdk
+	url = https://github.com/unitreerobotics/unilidar_sdk.git
