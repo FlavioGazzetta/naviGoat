@@ -2,7 +2,7 @@
 ARG BASE_IMAGE=osrf/ros:jazzy-desktop-full-noble
 FROM ${BASE_IMAGE}
 
-RUN apt-get update && apt-get install -y --no-install-recommends neovim tree ros-jazzy-rtabmap-ros && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y -o Acquire::http::Pipeline-Depth=0 --no-install-recommends neovim tree ros-jazzy-rviz2 ros-jazzy-rtabmap-ros && rm -rf /var/lib/apt/lists/*
 
 ARG PETE=false
 ENV PETE_YOLO_MODEL=/opt/models/yolov8s-worldv2.pt OLLAMA_MODELS=/opt/models/ollama
