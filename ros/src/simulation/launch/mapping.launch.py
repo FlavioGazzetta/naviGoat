@@ -28,6 +28,17 @@ def launch_rtabmap(context):
         'database_path': database_path,
         'Reg/Strategy': '1',
         'Grid/3D': 'true',
+
+        # CHanges made in order to fix ground misidentified as obstacles
+        'Grid/NormalsSegmentation': 'true', # default just stated for explicitness
+        'Grid/MaxGroundAngle': '45', # same
+        'Grid/NormalK': '20',
+        'Grid/MinGroundHeight': '-0.3',
+        'Grid/MaxGroundHeight': '0.1',
+        'Grid/MaxObstacleHeight': '1.5',
+        'Grid/RayTracing': 'true',
+        'Grid/NoiseFilteringRadius': '0.1',
+        'Grid/NoiseFilteringMinNeighbors': '3',
     }
 
     if mode == 'localisation':
