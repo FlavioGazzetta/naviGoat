@@ -1,5 +1,9 @@
-# Jetson: ros:jazzy-perception-noble
-ARG BASE_IMAGE=osrf/ros:jazzy-desktop-full-noble
+ARG TARGETARCH
+ARG BASE_IMAGE=base-${TARGETARCH}
+
+FROM osrf/ros:jazzy-desktop-full-noble AS base-amd64
+FROM ros:jazzy-perception-noble AS base-arm64
+
 FROM ${BASE_IMAGE}
 
 RUN apt-get update && apt-get install -y -o Acquire::http::Pipeline-Depth=0 --no-install-recommends neovim tree ros-jazzy-rviz2 ros-jazzy-rtabmap-ros python3-pip python3-numpy && rm -rf /var/lib/apt/lists/*
