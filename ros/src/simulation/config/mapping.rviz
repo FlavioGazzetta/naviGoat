@@ -3,12 +3,9 @@ Panels:
     Help Height: 85
     Name: Displays
     Property Tree Widget:
-      Expanded:
-        - /Map1
-        - /Map1/Status1
-        - /Map1/Topic1
+      Expanded: ~
       Splitter Ratio: 0.5
-    Tree Height: 335
+    Tree Height: 275
   - Class: rviz_common/Tool Properties
     Expanded: ~
     Name: Tool Properties
@@ -195,7 +192,7 @@ Visualization Manager:
       Color: 0; 200; 255
       Color Transformer: FlatColor
       Decay Time: 0
-      Enabled: true
+      Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Max Intensity: 4096
@@ -215,6 +212,52 @@ Visualization Manager:
         Value: /cloud_map
       Use Fixed Frame: true
       Use rainbow: true
+      Value: false
+    - Alpha: 0.699999988079071
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Nav2 Global Costmap
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /global_costmap/costmap
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /global_costmap/costmap_updates
+      Use Timestamp: false
+      Value: true
+    - Alpha: 0.699999988079071
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Nav2 Local Costmap
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_costmap/costmap
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_costmap/costmap_updates
+      Use Timestamp: false
       Value: true
     - Alpha: 0.699999988079071
       Binary representation: false
@@ -223,7 +266,7 @@ Visualization Manager:
       Color Scheme: map
       Draw Behind: false
       Enabled: true
-      Name: Map
+      Name: RTAB Occupency Map
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -285,25 +328,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 19.386192321777344
+      Distance: 17.05984878540039
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 0.3983490467071533
+        Y: -1.9265563488006592
+        Z: 1.6162523031234741
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6000000238418579
+      Pitch: 0.5947972536087036
       Target Frame: map
       Value: Orbit (rviz)
-      Yaw: 0.800000011920929
+      Yaw: 4.300012111663818
     Saved: ~
 Window Geometry:
   Displays:
@@ -311,7 +354,7 @@ Window Geometry:
   Height: 1080
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000020c000003cefc0200000003fb000000100044006900730070006c0061007900730100000048000001ed000000f300fffffffb0000001e0054006f006f006c002000500072006f0070006500720074006900650073010000023c0000007c0000006f00fffffffb0000000a0056006900650077007301000002bf00000157000000c500ffffff0000056d000003ce00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000027c000003cefc0200000003fb000000100044006900730070006c0061007900730100000048000001b1000000f300fffffffb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000200000000be0000006f00fffffffb0000000a0056006900650077007301000002c500000151000000c500ffffff000004fd000003ce00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Tool Properties:
     collapsed: false
   Views:
