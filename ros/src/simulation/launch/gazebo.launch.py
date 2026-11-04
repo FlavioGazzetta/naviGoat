@@ -2,8 +2,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import AppendEnvironmentVariable, ExecuteProcess
-from launch.substitutions import Command
+from launch.actions import AppendEnvironmentVariable, ExecuteProcess, IncludeLaunchDescription
+from launch.substitutions import Command, PathJoinSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -12,9 +12,20 @@ def generate_launch_description():
     simulation_dir = os.path.dirname(os.path.dirname(__file__))
     robot_description = Command(['xacro ', os.path.join(simulation_dir, 'description', 'pioneer3at_lidar.xacro')])
 
+    world_path = PathJoinSubstitution([
+        simulation_dir,
+        "worlds",
+        LaunchConfiguration("world")
+    ])
+
     return LaunchDescription([
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(p2os_share)),
-        ExecuteProcess(cmd=['gz', 'sim', '-r', os.path.join(simulation_dir, 'worlds', 'indoor.sdf')], output='screen'),
+        AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(simulation_dir, 'models')),
+        ExecuteProcess(
+            cmd=['gz', 'sim', '-r', world_path], 
+            output='screen'
+        ),
+
         Node(
             package='robot_state_publisher',
             executable='robot_state_publisher',

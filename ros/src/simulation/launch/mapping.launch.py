@@ -6,9 +6,15 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+
 def launch_rtabmap(context):
     simulation_dir = os.path.dirname(os.path.dirname(__file__))
-    database_path = os.path.join(simulation_dir, 'maps', 'rtabmap.db')
+    world_file = LaunchConfiguration('world').perform(context)
+    world_name = os.path.splitext(os.path.basename(world_file))[0]
+    database_path = os.path.join(simulation_dir, "maps", f"{world_name}.db")
+    # database_path = os.path.join(simulation_dir, 'maps', 'rtabmap.db')
+    
+
     mode = LaunchConfiguration('mode').perform(context)
     parameters = {
         'use_sim_time': True,
