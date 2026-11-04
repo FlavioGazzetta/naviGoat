@@ -1,10 +1,10 @@
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -26,6 +26,7 @@ def generate_launch_description():
         DeclareLaunchArgument('odom_frame_id', default_value=''),
         DeclareLaunchArgument('start_base', default_value='true'),
         DeclareLaunchArgument('start_lidar', default_value='true'),
+        DeclareLaunchArgument('filter_dynamic_objects', default_value='true'),
         DeclareLaunchArgument('rviz', default_value='true'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('p2os_bringup'), 'launch', 'p2os_driver_launch.py'])),
@@ -65,11 +66,32 @@ def generate_launch_description():
             output='screen',
         ),
         Node(
+            package='rtabmap_util',
+            executable='lidar_deskewing',
+            name='lidar_deskewing',
+            parameters=[{'fixed_frame_id': 'odom'}],
+            remappings=[('input_cloud', '/unilidar/cloud')],
+            condition=IfCondition(LaunchConfiguration('filter_dynamic_objects')),
+            output='screen',
+        ),
+        ExecuteProcess(
+            cmd=[
+                'dynamic-object-removal-realtime',
+                '--pointcloud-topic', '/unilidar/cloud/deskewed',
+                '--output-topic', '/unilidar/cloud_static',
+                '--algorithm', 'range',
+                '--fixed-frame', 'odom',
+                '--range-window', '3',
+            ],
+            condition=IfCondition(LaunchConfiguration('filter_dynamic_objects')),
+            output='screen',
+        ),
+        Node(
             package='rtabmap_slam',
             executable='rtabmap',
             name='rtabmap',
             parameters=[os.path.join(slam_dir, 'config', 'rtabmap.yaml'), {'database_path': LaunchConfiguration('database_path'), 'odom_frame_id': ParameterValue(LaunchConfiguration('odom_frame_id'), value_type=str)}],
-            remappings=[('scan_cloud', '/unilidar/cloud'), ('imu', '/unilidar/imu'), ('odom', '/odom')],
+            remappings=[('scan_cloud', PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter_dynamic_objects'), "'.lower() in ('true', '1') else '/unilidar/cloud'"])), ('imu', '/unilidar/imu'), ('odom', '/odom')],
             output='screen',
         ),
         Node(
