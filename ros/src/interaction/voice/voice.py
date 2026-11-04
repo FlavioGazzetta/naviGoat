@@ -12,6 +12,7 @@ With ROS:
 """
 
 import argparse
+import json
 import queue
 import re
 import shutil
@@ -19,8 +20,11 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
+import urllib.request
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import sounddevice as sd
@@ -172,6 +176,30 @@ def utterances(device, muted, min_rms, silence_s, max_s, min_s=0.4):
                 active, silent = [], 0
 
 
+class RemoteWhisper:
+    """Stands in for faster-whisper's WhisperModel, but sends the audio to whisper_server.py, which runs on the GPU."""
+
+    def __init__(self, url):
+        self.url = url.rstrip('/')
+
+    def transcribe(self, audio, initial_prompt='', **_):
+        query = urllib.parse.urlencode({'prompt': initial_prompt or ''})
+        request = urllib.request.Request(f'{self.url}/transcribe?{query}', data=audio.astype('<f4').tobytes())
+        with urllib.request.urlopen(request, timeout=30) as response:
+            segments = json.load(response)['segments']
+        return [SimpleNamespace(**segment) for segment in segments], None
+
+
+def load_model(args):
+    """Whisper on the GPU server if --whisper-url is given, otherwise faster-whisper on this machine's CPU."""
+    if args.whisper_url:
+        print(f'Using Whisper on the GPU server at {args.whisper_url}')
+        return RemoteWhisper(args.whisper_url)
+    from faster_whisper import WhisperModel
+    print(f'Loading Whisper ({args.model})...')
+    return WhisperModel(args.model, device='auto', compute_type='default')
+
+
 def transcribe(model, audio):
     segments, _ = model.transcribe(audio, language='en', beam_size=1, vad_filter=True, initial_prompt=PROMPT,
                                    condition_on_previous_text=False)
@@ -201,9 +229,7 @@ class Voice:
         return self.awaiting_follow_up and time.monotonic() < self.speaker.until + self.args.follow_up
 
     def listen(self):
-        from faster_whisper import WhisperModel
-        print(f'Loading Whisper ({self.args.model})...')
-        model = WhisperModel(self.args.model, device='auto', compute_type='default')
+        model = load_model(self.args)
 
         def muted():
             return self.speaker.busy() or time.monotonic() < self.speaker.until + 0.5
@@ -263,6 +289,7 @@ if __name__ == '__main__':
     parser.add_argument('--speed', type=float, default=1.0, help='speaking speed: above 1 is faster, below 1 is slower')
     parser.add_argument('--voice-dir', default='~/.cache/piper', help='folder holding the Piper voice files')
     parser.add_argument('--model', default='base.en', help='Whisper model: tiny.en, base.en, small.en, ...')
+    parser.add_argument('--whisper-url', default=None, help='use the Whisper GPU server (whisper_server.py), e.g. http://127.0.0.1:8765, instead of the CPU')
     parser.add_argument('--no-wake-word', dest='wake_word', action='store_false', help="act on everything heard, not only phrases containing 'Pete'")
     parser.add_argument('--follow-up', type=float, default=6.0, help='seconds after a reply in which no wake word is needed')
     parser.add_argument('--min-rms', type=float, default=0.01, help='minimum loudness that counts as speech; raise it in noisy rooms')
