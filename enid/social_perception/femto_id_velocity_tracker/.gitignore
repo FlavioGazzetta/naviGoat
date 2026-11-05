@@ -1,0 +1,12 @@
+# Downloaded ML models
+*.pt
+*.engine
+weights/
+
+# Python generated files
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Archives
+*.zip
