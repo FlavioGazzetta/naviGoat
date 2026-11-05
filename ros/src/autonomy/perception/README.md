@@ -18,9 +18,9 @@ Pete takes text requests. Speech to text is handled separately, so whatever it p
 - **Scene understanding: Qwen3-VL 2B** (`qwen3-vl:2b-instruct`), run locally through Ollama. It is about 1.9 GB, so it fits comfortably on the 8 GB Jetson Orin Nano alongside YOLO. The `-instruct` tag matters: the plain `qwen3-vl:2b` is a thinking model and spends all its tokens reasoning before it answers.
 - **Understanding requests.** Simple requests are parsed directly. Anything else goes to the model with a constrained JSON output, so it can only return a valid intent and an object from the vocabulary. That is how "I'd like a coffee" becomes "find cup".
 - **Positions and distances come from the detector, not the language model.** The model was making distances up, so it now only describes the scene and Pete adds the positions itself:
-  - direction from the box centre and the camera's horizontal field of view (default 60°, `--hfov`), given as a clock position and left/right
-  - distance from the box height and a typical real height for the object (e.g. a chair is about 0.9 m)
-  - if the box is cut off at the top or bottom of the frame, Pete says it can't tell how far away it is instead of guessing
+  - direction from the box centre and the camera's horizontal field of view, given as a clock position and left/right. The Femto Bolt reports its own field of view (about 65°); other cameras use `--hfov` (default 60°)
+  - distance from the Orbbec Femto Bolt's depth image: the median depth over the middle half of the box, aligned to the colour image
+  - without depth (another camera, or the object is outside the depth sensor's narrower view), distance is guessed from the box height and a typical real height for the object (e.g. a chair is about 0.9 m). If the box is cut off at the top or bottom of the frame, Pete says it can't tell how far away it is instead of guessing
 - **Short answers.** Replies are capped at two sentences and only answer what was asked.
 - **Guiding** turns the robot towards the target, turns on the spot to search if it is not in view, and stops once it is close. It publishes `geometry_msgs/Twist` on `/cmd_vel`, which `p2os_driver` listens to. The driver stops the wheels if commands stop arriving, and Pete also stops if the camera goes quiet.
 
@@ -37,41 +37,43 @@ docker build -f docker/Dockerfile.dev --build-arg PETE=true -t navigoat:dev .
 docker build -f docker/Dockerfile.dev --build-arg BASE_IMAGE=ros:jazzy-perception-noble --build-arg PETE=true -t navigoat:dev .
 ```
 
-This adds YOLO-World, PyTorch, Ollama and the Qwen model to the image (several GB). Ollama starts automatically when you open a shell in the container.
+This adds YOLO-World, PyTorch, Ollama, the Qwen model and the Orbbec SDK to the image (several GB). Ollama starts automatically when you open a shell in the container.
 
-Start the container with the GPU and the camera:
+Start the container with the GPU and the cameras. `/dev/bus/usb` and the cgroup rule give the Orbbec SDK access to the Femto Bolt over USB:
 
 ```bash
 # laptop (needs the NVIDIA Container Toolkit)
 xhost +si:localuser:root
-docker run --rm -it --name navigoat-dev --network=host --gpus all --device /dev/video0 -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+docker run --rm -it --name navigoat-dev --network=host --gpus all --device /dev/video0 --device-cgroup-rule='c 189:* rmw' -v /dev/bus/usb:/dev/bus/usb -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 # Jetson over SSH (connect with ssh -X to see the camera window)
-docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus all --device /dev/video0 -e DISPLAY -v $HOME/.Xauthority:/root/.Xauthority:ro -v "$PWD:/workspace" navigoat:dev bash
+docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus all --device /dev/video0 --device-cgroup-rule='c 189:* rmw' -v /dev/bus/usb:/dev/bus/usb -e DISPLAY -v $HOME/.Xauthority:/root/.Xauthority:ro -v "$PWD:/workspace" navigoat:dev bash
 ```
 
 ### Without ROS (testing)
 
 ```bash
-python3 ros/src/autonomy/perception/classification.py --terminal --show
+python3 ros/src/autonomy/perception/classification.py --terminal --show --camera femto
 ```
 
-Type requests and Pete prints the replies. `--show` opens the camera with detection boxes. Quit with `q` in the window or Ctrl+D.
+Type requests and Pete prints the replies. `--show` opens the camera with detection boxes, labelled with their measured distance. Quit with `q` in the window or Ctrl+D. Leave out `--camera femto` to use a normal webcam (`--camera 0`), without depth.
 
 ### With ROS
 
 ```bash
-python3 ros/src/autonomy/perception/classification.py --ros-args -p use_webcam:=true -p enable_drive:=true
+python3 ros/src/autonomy/perception/classification.py --ros-args -p use_femto:=true -p enable_drive:=true
 ros2 topic pub --once /pete/command std_msgs/msg/String "{data: 'where is the chair'}"
 ros2 topic echo /pete/response
 ```
 
 | Parameter | Default | |
 | --- | --- | --- |
-| `use_webcam` | `false` | read the camera directly instead of subscribing to `image_topic` |
+| `use_femto` | `false` | read the Femto Bolt directly, with depth |
+| `use_webcam` | `false` | read a webcam (`webcam_index`) directly instead of subscribing to `image_topic` |
 | `image_topic` | `/camera/image_raw` | |
+| `depth_topic` | (none) | depth image aligned to `image_topic` (`16UC1` mm or `32FC1` m), for real distances in topic mode |
 | `enable_drive` | `false` | allow Pete to publish drive commands |
 | `cmd_vel_topic` | `/cmd_vel` | use `/model/pioneer3at/cmd_vel` in Gazebo |
-| `hfov_deg` | `60.0` | camera horizontal field of view |
+| `hfov_deg` | `60.0` | camera horizontal field of view (ignored with `use_femto`, which reports its own) |
 | `require_wake_word` | `false` | only respond to requests starting with "pete" |
 
 ## Jetson notes
@@ -80,9 +82,10 @@ ros2 topic echo /pete/response
 - The standard PyTorch ARM build prints a warning that it doesn't support the Orin (compute capability 8.7). It does run on the GPU, so the warning is hidden in the script. The NVIDIA Jetson wheels on `pypi.jetson-ai-lab.io/sbsa/cu130` are built for Thor and Spark only and don't work on the Orin.
 - The first reply is slow while the Qwen model loads onto the GPU. After that it stays loaded.
 - Building the image on the Jetson takes about an hour. Run it inside `tmux` so a dropped SSH connection doesn't kill it.
+- The Femto Bolt has only been tested on the laptop so far. Its depth is computed on the GPU through EGL, which on the Jetson relies on the NVIDIA runtime providing the EGL driver. If Pete aborts with `Depth engine create and initialize failed`, the container can't reach the GPU's EGL driver.
 
 ## Next steps
 
 - Obstacle stop using the sonars (`sonar/range_N`) or the lidar before driving is enabled
-- Real distances from sonar/lidar instead of estimating from box size
+- Use the depth image to place found objects on the SLAM map
 - Check that detection is fast enough on the Jetson for smooth guiding

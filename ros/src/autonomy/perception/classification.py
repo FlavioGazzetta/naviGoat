@@ -25,6 +25,10 @@ In Gazebo add -p cmd_vel_topic:=/model/pioneer3at/cmd_vel.
 Without ROS (type requests, replies are printed):
     python3 classification.py --terminal --show   (q in the window or Ctrl+D quits)
 
+With the Orbbec Femto Bolt (--camera femto, or -p use_femto:=true in ROS), distances come from its depth
+image. In ROS image-topic mode, -p depth_topic:=... does the same with a depth image aligned to the colour one.
+Without depth, distances are guessed from how big the object looks.
+
 Guidance only steers towards the target. It does not avoid obstacles, so keep
 driving off until a sonar/lidar stop layer is in place.
 """
@@ -44,6 +48,7 @@ import urllib.request
 import warnings
 
 import cv2
+import numpy as np
 
 # Harmless on the Jetson: the sm_80 build runs fine on the Orin.
 warnings.filterwarnings('ignore', message='Found GPU0 Orin')
@@ -51,22 +56,29 @@ warnings.filterwarnings('ignore', message='`torch.jit.load` is deprecated')
 
 OLLAMA_URL = 'http://localhost:11434/api/chat'
 VLM_MODEL = 'qwen3-vl:2b-instruct'
+OLLAMA_OPTIONS = {'num_ctx': 4096}  # the same on every request: Ollama reloads the model when these change
 YOLO_MODEL = os.environ.get('PETE_YOLO_MODEL', 'yolov8s-worldv2.pt')
 
 WAKE_WORDS = ('hey pete', 'ok pete', 'pete')
 
-VOCABULARY = ['person', 'chair', 'couch', 'bed', 'table', 'door', 'tv', 'remote', 'laptop', 'cell phone', 'bottle', 'cup', 'book', 'backpack', 'keys', 'wallet', 'glasses', 'shoe', 'refrigerator', 'sink', 'toilet', 'stairs', 'dog', 'cat']
-ALIASES = {'television': 'tv', 'remote control': 'remote', 'tv remote': 'remote', 'sofa': 'couch', 'phone': 'cell phone', 'fridge': 'refrigerator', 'desk': 'table', 'key': 'keys', 'steps': 'stairs'}
+VOCABULARY = ['person', 'chair', 'couch', 'bed', 'table', 'door', 'door handle', 'tv', 'remote', 'laptop', 'cell phone', 'bottle', 'can', 'cup', 'book', 'backpack', 'keys', 'wallet', 'glasses', 'shoe', 'refrigerator', 'sink', 'toilet', 'stairs', 'dog', 'cat', 'gun']
+ALIASES = {'pistol': 'gun', 'handgun': 'gun', 'rifle': 'gun', 'firearm': 'gun', 'weapon': 'gun','television': 'tv', 'remote control': 'remote', 'tv remote': 'remote', 'sofa': 'couch', 'phone': 'cell phone', 'fridge': 'refrigerator', 'desk': 'table', 'key': 'keys', 'steps': 'stairs', 'handle': 'door handle', 'door knob': 'door handle', 'doorknob': 'door handle'}
 
 # Rough real heights (m), used to guess distance from box size.
-HEIGHTS_M = {'person': 1.7, 'chair': 0.9, 'couch': 0.85, 'bed': 0.6, 'table': 0.75, 'door': 2.0, 'tv': 0.6, 'remote': 0.18, 'laptop': 0.25, 'cell phone': 0.15, 'bottle': 0.25, 'cup': 0.1, 'book': 0.22, 'backpack': 0.45, 'refrigerator': 1.7, 'sink': 0.3, 'toilet': 0.75}
+HEIGHTS_M = {'person': 1.7, 'chair': 0.9, 'couch': 0.85, 'bed': 0.6, 'table': 0.75, 'door': 2.0, 'door handle': 0.06, 'tv': 0.6, 'remote': 0.18, 'laptop': 0.25, 'cell phone': 0.15, 'bottle': 0.25, 'cup': 0.1, 'book': 0.22, 'backpack': 0.45, 'refrigerator': 1.7, 'sink': 0.3, 'toilet': 0.75, 'gun': 0.15}
+
+# A false alarm about these would frighten someone who can't check for themselves, so they need more confidence,
+# are worded as uncertain and are never driven towards.
+HAZARDS = {'gun': 0.5}
 
 SYSTEM_PROMPT = """You are Pete, a guide robot for a blind or low-vision person. \
 You see through your forward-facing camera, which points the way the person is heading.
 
 Your reply is read aloud to them, so:
 - Answer in one or two short spoken sentences. Answer only what was asked. No markdown, lists or emoji.
-- Mention what matters for moving safely first: people, obstacles, steps, doors and anything in the path.
+- When asked about the surroundings, start with the kind of place (an office, a kitchen, a corridor, a street, a park), then what is ahead.
+- Do not say how many people there are or how busy it is. Pete counts people itself and adds that after your answer.
+- Mention what matters for moving safely: people, obstacles, steps, doors and anything in the path.
 - Do not give distances, directions or clock positions. Pete measures those itself and adds them after your answer.
 - Only describe what you can see. If the image is dark, blurry or blocked, say so plainly.
 
@@ -137,7 +149,8 @@ class Detector:
         """Return [(label, confidence, (x1, y1, x2, y2)), ...]."""
         result = self.model.predict(frame, conf=self.confidence, verbose=False)[0]
         boxes = result.boxes
-        return [(result.names[int(c)], float(p), tuple(b)) for b, p, c in zip(boxes.xyxy.tolist(), boxes.conf.tolist(), boxes.cls.tolist())]
+        detections = [(result.names[int(c)], float(p), tuple(b)) for b, p, c in zip(boxes.xyxy.tolist(), boxes.conf.tolist(), boxes.cls.tolist())]
+        return [d for d in detections if d[1] >= HAZARDS.get(d[0], 0)]
 
 
 def ollama_chat(body, timeout=60):
@@ -145,6 +158,18 @@ def ollama_chat(body, timeout=60):
     request = urllib.request.Request(OLLAMA_URL, json.dumps(body).encode(), headers)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.load(response)
+
+
+def load_vlm(model):
+    """Load the vision model onto the GPU and keep it there. Call it before YOLO and the camera take memory:
+    on a Jetson, where they share it, Ollama would otherwise put most of the model on the much slower CPU."""
+    for _ in range(30):  # Ollama may have been started at the same time as Pete and not be listening yet
+        try:
+            return ollama_chat({'model': model, 'messages': [], 'keep_alive': -1, 'options': OLLAMA_OPTIONS}, timeout=300)
+        except urllib.error.URLError:
+            time.sleep(1)
+        except TimeoutError:
+            return  # describe_scene will tell the user if it is still unreachable
 
 
 def describe_scene(model, frame, question, hint):
@@ -159,7 +184,7 @@ def describe_scene(model, frame, question, hint):
     try:
         messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': text, 'images': [jpeg]}]
         # keep_alive -1 keeps the model loaded so the next question is fast.
-        response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'options': {'num_ctx': 4096, 'num_predict': 80}, 'messages': messages})
+        response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'options': {**OLLAMA_OPTIONS, 'num_predict': 80}, 'messages': messages})
     except urllib.error.URLError:
         return 'I cannot reach the vision model. Is Ollama running?'
     except TimeoutError:
@@ -178,7 +203,7 @@ intent is one of:
 - describe: they want to know what is around them
 - question: any other question about what is in view ("is the light on?")
 
-object is the thing in the room that gives them what they want: coffee or a drink -> cup, somewhere to sit -> chair, the way out -> door, something to watch -> tv. Use "" for describe and question."""
+object is the thing in the room that gives them what they want: coffee or a drink -> cup, somewhere to sit -> chair, the way out -> door, opening a door -> door handle, something to watch -> tv. Use "" for describe and question."""
 
 # Only allow objects the detector knows, so "coffee" has to become "cup".
 INTERPRET_SCHEMA = {'type': 'object', 'properties': {'intent': {'enum': ['find', 'guide', 'describe', 'question']}, 'object': {'enum': VOCABULARY + ['']}}, 'required': ['intent', 'object']}
@@ -188,7 +213,7 @@ def interpret(model, text):
     """Ask the model what an unrecognised request means. Returns (intent, object) or None."""
     messages = [{'role': 'system', 'content': INTERPRET_PROMPT}, {'role': 'user', 'content': text}]
     try:
-        response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'format': INTERPRET_SCHEMA, 'options': {'num_predict': 40}, 'messages': messages})
+        response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'format': INTERPRET_SCHEMA, 'options': {**OLLAMA_OPTIONS, 'num_predict': 40}, 'messages': messages})
         result = json.loads(response['message']['content'])
     except (urllib.error.URLError, TimeoutError, KeyError, ValueError):
         return None
@@ -211,8 +236,21 @@ def cut_off(box, shape):
     return box[1] <= 3 or box[3] >= shape[0] - 3
 
 
-def distance_m(label, box, shape, hfov):
-    """Guess the distance from how tall the object looks. None if we can't."""
+def depth_m(box, depth):
+    """Median depth over the middle half of the box, ignoring holes. None if there is too little."""
+    x1, y1, x2, y2 = box
+    w, h = x2 - x1, y2 - y1
+    patch = depth[int(y1 + h / 4):int(y2 - h / 4) + 1, int(x1 + w / 4):int(x2 - w / 4) + 1]
+    valid = patch[patch > 0]
+    return float(np.median(valid)) if valid.size > 20 else None
+
+
+def distance_m(label, box, shape, hfov, depth=None):
+    """Distance from the depth image if there is one, otherwise guessed from how tall the object looks. None if we can't."""
+    if depth is not None:
+        measured = depth_m(box, depth)
+        if measured is not None:
+            return measured
     focal = (shape[1] / 2) / math.tan(math.radians(hfov) / 2)
     height = box[3] - box[1]
     if label not in HEIGHTS_M or height <= 1 or cut_off(box, shape):
@@ -220,19 +258,20 @@ def distance_m(label, box, shape, hfov):
     return HEIGHTS_M[label] * focal / height
 
 
-def where_is(label, box, shape, hfov):
+def where_is(label, box, shape, hfov, depth=None):
     bearing = bearing_deg(box, shape[1], hfov)
     if abs(bearing) < 8:
         direction = 'straight ahead'
     else:
         hour = round(bearing / 30) % 12 or 12
         direction = f"at {hour} o'clock, to your {'right' if bearing > 0 else 'left'}"
-    distance = distance_m(label, box, shape, hfov)
+    distance = distance_m(label, box, shape, hfov, depth)
+    subject = f'Something that looks like a {label}' if label in HAZARDS else f'The {label}'
     if distance is not None:
-        return f'The {label} is {direction}, {meters(distance)} away.'
+        return f'{subject} is {direction}, {meters(distance)} away.'
     if cut_off(box, shape):
-        return f'The {label} is {direction}, partly out of view, so I cannot tell how far.'
-    return f'The {label} is {direction}.'
+        return f'{subject} is {direction}, partly out of view, so I cannot tell how far.'
+    return f'{subject} is {direction}.'
 
 
 def meters(d):
@@ -242,8 +281,8 @@ def meters(d):
 # --- Pete -------------------------------------------------------------------
 
 class Pete:
-    """Feed frames to step() and text to submit(); replies go to reply(text)
-    and, if driving is enabled, velocities to drive(linear m/s, angular rad/s)."""
+    """Feed frames (and depth in meters, if there is any) to step() and text to submit();
+    replies go to reply(text) and, if driving is enabled, velocities to drive(linear m/s, angular rad/s)."""
 
     MAX_LINEAR = 0.25
     MAX_ANGULAR = 0.6
@@ -260,17 +299,10 @@ class Pete:
         self.require_wake_word = require_wake_word
         self.inbox = queue.Queue()
         self.task = None  # ('find' | 'guide', label, started)
+        self.depth = None  # depth of the current frame, aligned to it
         self.last_seen = None
         self.last_bearing = 0.0
         self.describing = threading.Event()
-        # Load the vision model now rather than on the first question.
-        threading.Thread(target=self.warm_up, daemon=True).start()
-
-    def warm_up(self):
-        try:
-            ollama_chat({'model': self.vlm_model, 'messages': [], 'keep_alive': -1}, timeout=300)
-        except (urllib.error.URLError, TimeoutError):
-            pass  # describe_scene will tell the user if it is still unreachable
 
     def submit(self, text):
         command = parse_command(text, self.require_wake_word)
@@ -282,8 +314,10 @@ class Pete:
         if self.drive:
             self.drive(0.0, 0.0)
 
-    def step(self, frame, now=None):
+    def step(self, frame, depth=None, now=None):
         now = time.monotonic() if now is None else now
+        # Depth is only usable if it lines up pixel for pixel with the frame.
+        self.depth = depth if depth is not None and depth.shape[:2] == frame.shape[:2] else None
         detections = self.detector.detect(frame)
         while not self.inbox.empty():
             self.handle(*self.inbox.get_nowait(), frame, detections, now)
@@ -301,14 +335,14 @@ class Pete:
             self.stop()
             self.reply('Stopped.')
         elif intent == 'describe':
-            self.start_describe(frame, None, detections)
+            self.start_describe(frame, text, detections, positions=True)
         elif intent == 'question':
             self.start_describe(frame, text, detections)
         elif intent == 'ask':
             self.start_interpret(text)
         else:
             label = self.detector.add(target)
-            if intent == 'guide' and self.drive:
+            if intent == 'guide' and self.drive and label not in HAZARDS:
                 self.reply(f'Looking for the {label}.')
             else:
                 intent = 'find'
@@ -317,7 +351,7 @@ class Pete:
 
     def update_find(self, label, boxes, shape, elapsed):
         if boxes:
-            self.reply(where_is(label, boxes[0], shape, self.hfov))
+            self.reply(where_is(label, boxes[0], shape, self.hfov, self.depth))
             self.task = None
         elif elapsed > self.FIND_WINDOW_S:
             self.reply(f'I do not see a {label} in front of you.')
@@ -336,9 +370,9 @@ class Pete:
 
         box = min(boxes, key=lambda b: abs(bearing_deg(b, width, self.hfov) - self.last_bearing))
         bearing = bearing_deg(box, width, self.hfov)
-        distance = distance_m(label, box, shape, self.hfov)
+        distance = distance_m(label, box, shape, self.hfov, self.depth)
         if self.last_seen is None:
-            self.reply(f'I see it. {where_is(label, box, shape, self.hfov)} Follow me.')
+            self.reply(f'I see it. {where_is(label, box, shape, self.hfov, self.depth)} Follow me.')
         self.last_seen, self.last_bearing = now, bearing
 
         close = (distance is not None and distance < self.ARRIVE_M) or (box[3] - box[1]) > 0.6 * height
@@ -357,20 +391,23 @@ class Pete:
             self.inbox.put((intent, target, text))
         threading.Thread(target=worker, daemon=True).start()
 
-    def start_describe(self, frame, question, detections):
+    def start_describe(self, frame, question, detections, positions=False):
         if self.describing.is_set():
             return self.reply('I am still looking, one moment.')
         self.describing.set()
-        hint = ', '.join(sorted({label for label, _, _ in detections}))
-        # The vision model says what is there; positions come from the detector, nearest first.
-        positions = ''
-        if question is None:
-            nearest = sorted(detections, key=lambda d: distance_m(d[0], d[2], frame.shape, self.hfov) or 99)[:2]
-            positions = ' ' + ' '.join(where_is(label, box, frame.shape, self.hfov) for label, _, box in nearest)
+        labels = [label for label, _, _ in detections]
+        hint = ', '.join(f'{labels.count(name)} {name}' for name in sorted(set(labels) | {'person'}))  # counts, with "0 person" when nobody is seen
+        # The vision model says what is there; the number of people and positions come from the detector, nearest first.
+        where = ''
+        if positions:
+            people = labels.count('person')
+            where = ' ' + ('Nobody is in view.' if people == 0 else 'There is one person in view.' if people == 1 else f'There are {people} people in view.')
+            nearest = sorted(detections, key=lambda d: distance_m(d[0], d[2], frame.shape, self.hfov, self.depth) or 99)[:2]
+            where += ' ' + ' '.join(where_is(label, box, frame.shape, self.hfov, self.depth) for label, _, box in nearest)
 
         def worker():  # the vision model takes a few seconds; don't hold up guidance
             try:
-                self.reply((describe_scene(self.vlm_model, frame.copy(), question, hint) + positions).strip())
+                self.reply((describe_scene(self.vlm_model, frame.copy(), question, hint) + where).strip())
             finally:
                 self.describing.clear()
         threading.Thread(target=worker, daemon=True).start()
@@ -378,22 +415,81 @@ class Pete:
 
 # --- Running ----------------------------------------------------------------
 
-def draw(frame, detections, target):
-    """Box every detection; the object Pete is looking for is red, the rest green."""
+class FemtoBolt:
+    """Orbbec Femto Bolt, read like cv2.VideoCapture. After each read(), depth holds meters aligned to the frame (0 = no reading)."""
+
+    def __init__(self, width=1280, height=720):
+        import pyorbbecsdk as ob
+        ob.Context.set_logger_to_file(ob.OBLogLevel.NONE, '')  # otherwise the SDK writes a Log/ folder wherever Pete runs
+        self.pipeline = ob.Pipeline()
+        colour = self.pipeline.get_stream_profile_list(ob.OBSensorType.COLOR_SENSOR).get_video_stream_profile(width, height, ob.OBFormat.MJPG, 30)
+        config = ob.Config()
+        config.enable_stream(colour)
+        config.enable_stream(self.pipeline.get_stream_profile_list(ob.OBSensorType.DEPTH_SENSOR).get_default_video_stream_profile())
+        self.pipeline.start(config)
+        self.align = ob.AlignFilter(align_to_stream=ob.OBStreamType.COLOR_STREAM)
+        intrinsic = colour.get_intrinsic()
+        self.hfov = math.degrees(2 * math.atan(intrinsic.width / 2 / intrinsic.fx))
+        self.depth = None
+        self.lock = threading.Lock()  # release() can come from another thread while read() is waiting for frames
+
+    def read(self):
+        with self.lock:
+            for _ in range(10 if self.pipeline else 0):  # the odd frame set arrives without depth; don't treat that as the camera closing
+                frames = self.pipeline.wait_for_frames(1000)
+                frames = None if frames is None else self.align.process(frames)
+                frames = None if frames is None else frames.as_frame_set()
+                if frames is None or frames.get_color_frame() is None or frames.get_depth_frame() is None:
+                    continue
+                colour, depth = frames.get_color_frame(), frames.get_depth_frame()
+                image = cv2.imdecode(np.frombuffer(colour.get_data(), np.uint8), cv2.IMREAD_COLOR)
+                if image is None:
+                    continue
+                raw = np.frombuffer(depth.get_data(), np.uint16).reshape(depth.get_height(), depth.get_width())
+                self.depth = raw * (depth.get_depth_scale() / 1000)
+                return True, image
+            return False, None
+
+    def release(self):
+        # Stop explicitly: leaving it to Python's exit crashes on the Jetson.
+        with self.lock:
+            if self.pipeline:
+                self.pipeline.stop()
+                self.pipeline = None
+
+
+def open_camera(name):
+    """'femto' for the Orbbec Femto Bolt (colour and depth), otherwise a webcam index or video file. None if it won't open."""
+    if name == 'femto':
+        try:
+            return FemtoBolt()
+        except Exception as error:  # the SDK raises its own error types
+            print(f'Femto Bolt: {error}', file=sys.stderr)
+            return None
+    capture = cv2.VideoCapture(int(name) if name.isdigit() else name)
+    return capture if capture.isOpened() else None
+
+
+def draw(frame, detections, target, depth=None, scale=1.0):
+    """Box every detection; the object Pete is looking for is red, the rest green. scale is the frame's size relative to the detections'."""
     for label, p, box in detections:
-        x1, y1, x2, y2 = (int(v) for v in box)
+        x1, y1, x2, y2 = (int(v * scale) for v in box)
         colour = (0, 0, 255) if label == target else (0, 200, 0)
+        measured = None if depth is None else depth_m(box, depth)
+        text = f'{label} {p:.0%}' + ('' if measured is None else f' {measured:.1f}m')
         cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
-        cv2.putText(frame, f'{label} {p:.0%}', (x1, max(15, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 2)
+        cv2.putText(frame, text, (x1, max(12, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, colour, 1)
     return frame
 
 
 def run_terminal(camera, hfov, vlm_model, show):
-    capture = cv2.VideoCapture(int(camera) if camera.isdigit() else camera)
-    if not capture.isOpened():
+    print('Loading the vision model...', flush=True)
+    load_vlm(vlm_model)
+    capture = open_camera(camera)
+    if capture is None:
         sys.exit(f'Could not open camera {camera}. Is another program (or another copy of Pete) using it?')
     reply = lambda text: print(f'\n[pete] {text}\n> ', end='', flush=True)
-    pete = Pete(Detector(), reply, hfov=hfov, vlm_model=vlm_model)
+    pete = Pete(Detector(), reply, hfov=getattr(capture, 'hfov', hfov), vlm_model=vlm_model)
 
     def read_stdin():
         for line in sys.stdin:
@@ -406,12 +502,15 @@ def run_terminal(camera, hfov, vlm_model, show):
         ok, frame = capture.read()
         if not ok:
             break
-        detections = pete.step(frame)
+        detections = pete.step(frame, getattr(capture, 'depth', None))
         if show:
-            # Draw on a copy: the vision model must see the clean frame.
-            cv2.imshow('pete', draw(frame.copy(), detections, pete.task[1] if pete.task else None))
+            # Draw on a smaller copy: the vision model must see the clean frame, and a big window is slow over SSH.
+            scale = min(1.0, 640 / frame.shape[1])
+            small = cv2.resize(frame, None, fx=scale, fy=scale) if scale < 1 else frame.copy()
+            cv2.imshow('pete', draw(small, detections, pete.task[1] if pete.task else None, pete.depth, scale))
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+    capture.release()
     cv2.destroyAllWindows()
 
 
@@ -425,7 +524,8 @@ def run_ros():
     rclpy.init()
     node = rclpy.create_node('pete')
     param = lambda name, default: node.declare_parameter(name, default).value
-    use_webcam = param('use_webcam', False)
+    use_femto = param('use_femto', False)
+    use_webcam = param('use_webcam', False) or use_femto
     enable_drive = param('enable_drive', False)
     bridge = CvBridge()
 
@@ -441,29 +541,41 @@ def run_ros():
         twist.linear.x, twist.angular.z = float(linear), float(angular)
         cmd_pub.publish(twist)
 
+    vlm_model = param('vlm_model', VLM_MODEL)
+    node.get_logger().info('Loading the vision model...')
+    load_vlm(vlm_model)
+
+    capture = None
+    if use_webcam:
+        capture = open_camera('femto' if use_femto else str(param('webcam_index', 0)))
+        if capture is None:
+            sys.exit('Could not open the camera. Is another program (or another copy of Pete) using it?')
+
     detector = Detector(param('model_path', YOLO_MODEL))
-    pete = Pete(detector, reply, drive if enable_drive else None, param('hfov_deg', 60.0), param('require_wake_word', False), param('vlm_model', VLM_MODEL))
+    pete = Pete(detector, reply, drive if enable_drive else None, getattr(capture, 'hfov', param('hfov_deg', 60.0)), param('require_wake_word', False), vlm_model)
     node.create_subscription(String, '/pete/command', lambda msg: pete.submit(msg.data), 10)
 
     latest = {}
-    if use_webcam:
-        capture = cv2.VideoCapture(param('webcam_index', 0))
-        if not capture.isOpened():
-            sys.exit('Could not open the webcam. Is another program (or another copy of Pete) using it?')
-    else:
+    if not use_webcam:
         on_image = lambda msg: latest.update(frame=bridge.imgmsg_to_cv2(msg, 'bgr8'), time=time.monotonic())
         node.create_subscription(Image, param('image_topic', '/camera/image_raw'), on_image, 1)
+        depth_topic = param('depth_topic', '')
+        if depth_topic:  # must be aligned to the colour image; 16UC1 is millimeters, 32FC1 meters
+            def on_depth(msg):
+                depth = bridge.imgmsg_to_cv2(msg, 'passthrough')
+                latest['depth'] = depth / 1000.0 if msg.encoding == '16UC1' else depth
+            node.create_subscription(Image, depth_topic, on_depth, 1)
 
     def tick():
         if use_webcam:
             ok, frame = capture.read()
-            frame = frame if ok else None
+            frame, depth = (frame if ok else None), getattr(capture, 'depth', None)
         else:
-            frame = latest.pop('frame', None)
+            frame, depth = latest.pop('frame', None), latest.get('depth')
             if frame is None and pete.task and time.monotonic() - latest.get('time', 0) > 0.5:
                 pete.stop()  # camera went quiet: don't drive blind
         if frame is not None:
-            pete.step(frame)
+            pete.step(frame, depth)
 
     node.create_timer(0.1, tick)
     node.get_logger().info(f"Pete is ready. Driving is {'ON' if enable_drive else 'off'}.")
@@ -473,14 +585,16 @@ def run_ros():
         pass
     finally:
         drive(0.0, 0.0)
+        if capture is not None:
+            capture.release()
         rclpy.try_shutdown()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--terminal', action='store_true', help='run without ROS')
-    parser.add_argument('--camera', default='0')
-    parser.add_argument('--hfov', type=float, default=60.0, help='camera horizontal field of view')
+    parser.add_argument('--camera', default='0', help='webcam index, video file, or femto for the Orbbec Femto Bolt (adds depth)')
+    parser.add_argument('--hfov', type=float, default=60.0, help='camera horizontal field of view (the Femto Bolt reports its own)')
     parser.add_argument('--vlm', default=VLM_MODEL, help='Ollama vision model')
     parser.add_argument('--show', action='store_true', help='show the camera with detection boxes (terminal mode)')
     args, _ = parser.parse_known_args()  # leave --ros-args for ROS
