@@ -61,11 +61,12 @@ YOLO_MODEL = os.environ.get('PETE_YOLO_MODEL', 'yolov8s-worldv2.pt')
 
 WAKE_WORDS = ('hey pete', 'ok pete', 'pete')
 
-VOCABULARY = ['person', 'chair', 'couch', 'bed', 'table', 'door', 'door handle', 'tv', 'remote', 'laptop', 'cell phone', 'bottle', 'can', 'cup', 'book', 'backpack', 'keys', 'wallet', 'glasses', 'shoe', 'refrigerator', 'sink', 'toilet', 'stairs', 'dog', 'cat', 'gun']
-ALIASES = {'pistol': 'gun', 'handgun': 'gun', 'rifle': 'gun', 'firearm': 'gun', 'weapon': 'gun','television': 'tv', 'remote control': 'remote', 'tv remote': 'remote', 'sofa': 'couch', 'phone': 'cell phone', 'fridge': 'refrigerator', 'desk': 'table', 'key': 'keys', 'steps': 'stairs', 'handle': 'door handle', 'door knob': 'door handle', 'doorknob': 'door handle'}
+VOCABULARY = ['person', 'chair', 'couch', 'bed', 'table', 'door', 'door handle', 'tv', 'remote', 'laptop', 'cell phone', 'bottle', 'can', 'cup', 'book', 'backpack', 'keys', 'wallet', 'glasses', 'shoe', 'refrigerator', 'sink', 'toilet', 'stairs', 'dog', 'cat', 'gun', 'traffic light']
+ALIASES = {'pistol': 'gun', 'handgun': 'gun', 'rifle': 'gun', 'firearm': 'gun', 'weapon': 'gun','television': 'tv', 'remote control': 'remote', 'tv remote': 'remote', 'sofa': 'couch', 'phone': 'cell phone', 'fridge': 'refrigerator', 'desk': 'table', 'key': 'keys', 'steps': 'stairs', 'handle': 'door handle', 'door knob': 'door handle', 'doorknob': 'door handle', 'crossing light': 'traffic light', 'pedestrian light': 'traffic light', 'traffic signal': 'traffic light', 'crossing signal': 'traffic light'}
 
 # Rough real heights (m), used to guess distance from box size.
-HEIGHTS_M = {'person': 1.7, 'chair': 0.9, 'couch': 0.85, 'bed': 0.6, 'table': 0.75, 'door': 2.0, 'door handle': 0.06, 'tv': 0.6, 'remote': 0.18, 'laptop': 0.25, 'cell phone': 0.15, 'bottle': 0.25, 'cup': 0.1, 'book': 0.22, 'backpack': 0.45, 'refrigerator': 1.7, 'sink': 0.3, 'toilet': 0.75, 'gun': 0.15}
+HEIGHTS_M = {'person': 1.7, 'chair': 0.9, 'couch': 0.85, 'bed': 0.6, 'table': 0.75, 'door': 2.0, 'door handle': 0.06, 'tv': 0.6, 'remote': 0.18, 'laptop': 0.25, 'cell phone': 0.15, 'bottle': 0.25, 'cup': 0.1, 'book': 0.22, 'backpack': 0.45, 'refrigerator': 1.7, 'sink': 0.3, 'toilet': 0.75, 'gun': 0.15, 'traffic light': 0.4}
+PLURAL = {'stairs', 'keys', 'glasses'}
 
 # A false alarm about these would frighten someone who can't check for themselves, so they need more confidence,
 # are worded as uncertain and are never driven towards.
@@ -81,6 +82,7 @@ Your reply is read aloud to them, so:
 - Mention what matters for moving safely: people, obstacles, steps, doors and anything in the path.
 - Do not give distances, directions or clock positions. Pete measures those itself and adds them after your answer.
 - Only describe what you can see. If the image is dark, blurry or blocked, say so plainly.
+- Never say it is safe to cross a road. Whether to cross is the person's decision.
 
 You may be given a list of objects a detector found. It can be wrong, so trust the image when they disagree."""
 
@@ -89,7 +91,7 @@ You may be given a list of objects a detector found. It can be wrong, so trust t
 
 _STOP = re.compile(r"^(please )?(stop|halt|cancel|wait|freeze)\b")
 _GUIDE = re.compile(r"\b(bring|take|lead|guide|walk|go)( me)? (to|towards)\b(?P<target>.*)")
-_FIND = re.compile(r"\b(where's|where is|where are|find|locate|look for|is there|do you see)\b(?P<target>.*)")
+_FIND = re.compile(r"\b(where's|where is|where are|find|locate|look for|is there|do you see|what colou?r is)\b(?P<target>.*)")
 _DESCRIBE = re.compile(r"\b(what's|what is|whats|describe)\b.*\b(in front|ahead|around|happening|room)\b|\bwhat (do|can) you see\b")
 _FILLER = re.compile(r"^(the|a|an|my|any|nearest) | (please|in front of me|around me|here|in the room)$")
 
@@ -203,7 +205,7 @@ intent is one of:
 - describe: they want to know what is around them
 - question: any other question about what is in view ("is the light on?")
 
-object is the thing in the room that gives them what they want: coffee or a drink -> cup, somewhere to sit -> chair, the way out -> door, opening a door -> door handle, something to watch -> tv. Use "" for describe and question."""
+object is the thing in the room that gives them what they want: coffee or a drink -> cup, somewhere to sit -> chair, the way out -> door, opening a door -> door handle, something to watch -> tv, whether they can cross the road -> traffic light. Use "" for describe and question."""
 
 # Only allow objects the detector knows, so "coffee" has to become "cup".
 INTERPRET_SCHEMA = {'type': 'object', 'properties': {'intent': {'enum': ['find', 'guide', 'describe', 'question']}, 'object': {'enum': VOCABULARY + ['']}}, 'required': ['intent', 'object']}
@@ -260,22 +262,54 @@ def distance_m(label, box, shape, hfov, depth=None):
 
 def where_is(label, box, shape, hfov, depth=None):
     bearing = bearing_deg(box, shape[1], hfov)
+    side = 'right' if bearing > 0 else 'left'
     if abs(bearing) < 8:
         direction = 'straight ahead'
+    elif abs(bearing) < 15:  # rounds to 12 o'clock, which would contradict "to your right"
+        direction = f'slightly to your {side}'
     else:
-        hour = round(bearing / 30) % 12 or 12
-        direction = f"at {hour} o'clock, to your {'right' if bearing > 0 else 'left'}"
+        hour = (round(bearing / 30) or (1 if bearing > 0 else -1)) % 12  # round(0.5) is 0 in Python
+        direction = f"at {hour} o'clock, to your {side}"
     distance = distance_m(label, box, shape, hfov, depth)
     subject = f'Something that looks like a {label}' if label in HAZARDS else f'The {label}'
+    verb = 'are' if label in PLURAL else 'is'
     if distance is not None:
-        return f'{subject} is {direction}, {meters(distance)} away.'
+        return f'{subject} {verb} {direction}, {meters(distance)} away.'
     if cut_off(box, shape):
-        return f'{subject} is {direction}, partly out of view, so I cannot tell how far.'
-    return f'{subject} is {direction}.'
+        return f'{subject} {verb} {direction}, partly out of view, so I cannot tell how far.'
+    return f'{subject} {verb} {direction}.'
 
 
 def meters(d):
-    return 'less than a meter' if d < 1 else f'about {round(d * 2) / 2:g} meters'
+    rounded = round(d * 2) / 2
+    return 'less than a meter' if d < 1 else 'about 1 meter' if rounded == 1 else f'about {rounded:g} meters'
+
+
+# --- Traffic lights -------------------------------------------------------
+
+LIGHT_PROMPT = 'You look at traffic lights for a blind person. Say which colour is lit, or unclear if you cannot tell.'
+LIGHT_SCHEMA = {'type': 'object', 'properties': {'colour': {'enum': ['red', 'green', 'unclear']}}, 'required': ['colour']}
+
+
+def crop_around(frame, box, margin=0.25):
+    """The box with some context around it."""
+    x1, y1, x2, y2 = box
+    mx, my = (x2 - x1) * margin, (y2 - y1) * margin
+    return frame[max(0, int(y1 - my)):int(y2 + my), max(0, int(x1 - mx)):int(x2 + mx)].copy()
+
+
+def light_colour(model, crop):
+    """'red' or 'green' as the vision model sees the lit lamp; None if it can't tell or can't be reached."""
+    if crop.shape[1] > 448:  # small images are much quicker on a Jetson
+        crop = cv2.resize(crop, (448, int(crop.shape[0] * 448 / crop.shape[1])))
+    jpeg = base64.standard_b64encode(cv2.imencode('.jpg', crop)[1].tobytes()).decode()
+    messages = [{'role': 'system', 'content': LIGHT_PROMPT}, {'role': 'user', 'content': 'Which colour is lit?', 'images': [jpeg]}]
+    try:
+        response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'format': LIGHT_SCHEMA, 'options': {**OLLAMA_OPTIONS, 'num_predict': 20}, 'messages': messages})
+        colour = json.loads(response['message']['content'])['colour']
+    except (urllib.error.URLError, TimeoutError, KeyError, ValueError):
+        return None
+    return colour if colour in ('red', 'green') else None
 
 
 # --- Pete -------------------------------------------------------------------
@@ -325,7 +359,7 @@ class Pete:
             kind, label, started = self.task
             boxes = [b for name, _, b in detections if name == label]
             if kind == 'find':
-                self.update_find(label, boxes, frame.shape, now - started)
+                self.update_find(label, boxes, frame, now - started)
             else:
                 self.update_guide(label, boxes, frame.shape, now, started)
         return detections
@@ -336,22 +370,26 @@ class Pete:
             self.reply('Stopped.')
         elif intent == 'describe':
             self.start_describe(frame, text, detections, positions=True)
-        elif intent == 'question':
+        elif intent == 'question' and target != 'traffic light':  # "can I cross?" gets the measured light colour, not an opinion
             self.start_describe(frame, text, detections)
         elif intent == 'ask':
             self.start_interpret(text)
         else:
             label = self.detector.add(target)
-            if intent == 'guide' and self.drive and label not in HAZARDS:
+            if intent == 'guide' and self.drive and label not in HAZARDS and label != 'traffic light':  # never drive into the road
                 self.reply(f'Looking for the {label}.')
             else:
                 intent = 'find'
             self.task = (intent, label, now)
             self.last_seen, self.last_bearing = None, 0.0
 
-    def update_find(self, label, boxes, shape, elapsed):
+    def update_find(self, label, boxes, frame, elapsed):
         if boxes:
-            self.reply(where_is(label, boxes[0], shape, self.hfov, self.depth))
+            where = where_is(label, boxes[0], frame.shape, self.hfov, self.depth)
+            if label == 'traffic light':
+                self.start_light_colour(where, crop_around(frame, boxes[0]))
+            else:
+                self.reply(where)
             self.task = None
         elif elapsed > self.FIND_WINDOW_S:
             self.reply(f'I do not see a {label} in front of you.')
@@ -384,6 +422,14 @@ class Pete:
         # Turn in place if well off to the side, otherwise drive and steer.
         linear = 0.0 if abs(bearing) > 20 else self.MAX_LINEAR * math.cos(math.radians(bearing) * 4.5)
         self.drive(linear, angular)
+
+    def start_light_colour(self, where, crop):
+        def worker():  # the vision model takes a moment; don't hold up the frames
+            colour = light_colour(self.vlm_model, crop)
+            # Colour first, as it is what the user asked; only what it looks like, as whether to cross is the user's call.
+            position = 'It' + where[len('The traffic light'):]  # "It is straight ahead, about 12 meters away."
+            self.reply(f'The traffic light is {colour}. {position}' if colour else f'I cannot tell what colour the traffic light is. {position}')
+        threading.Thread(target=worker, daemon=True).start()
 
     def start_interpret(self, text):
         def worker():  # the model takes a moment; the answer goes back through the inbox so step() acts on a fresh frame
