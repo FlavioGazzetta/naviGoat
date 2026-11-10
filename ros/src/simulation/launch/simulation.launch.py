@@ -22,7 +22,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('mode', default_value='mapping', choices=['mapping', 'localisation']),
-        DeclareLaunchArgument("world", default_value="indoors.sdf", description="Lets us choose which world we wanna be in"),
+        DeclareLaunchArgument("world", default_value="indoor.sdf", description="Lets us choose which world we wanna be in"),
         
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'gazebo.launch.py')),
