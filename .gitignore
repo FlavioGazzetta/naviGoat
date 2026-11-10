@@ -8,3 +8,4 @@ __pycache__/
 /ros/src/simulation/maps/*
 !/ros/src/simulation/maps/.gitkeep
 /weights/
+/Log/

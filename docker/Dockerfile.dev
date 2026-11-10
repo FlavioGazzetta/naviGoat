@@ -10,12 +10,15 @@ RUN apt-get update && apt-get install -y -o Acquire::http::Pipeline-Depth=0 --no
 RUN python3 -m pip install --break-system-packages dynamic-object-removal==0.6.0
 
 ARG PETE=false
-ENV PETE_YOLO_MODEL=/opt/models/yolov8s-worldv2.pt OLLAMA_MODELS=/opt/models/ollama
+ENV PETE_YOLO_MODEL=/opt/models/yolov8s-worldv2.pt OLLAMA_MODELS=/opt/models/ollama NVIDIA_DRIVER_CAPABILITIES=all
+# Femto Bolt depth runs on the GPU through EGL and OpenGL, hence libegl1, libgl1 and the NVIDIA EGL vendor file
 RUN if [ "$PETE" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends python3-pip git curl zstd && rm -rf /var/lib/apt/lists/* && \
+        apt-get update && apt-get install -y --no-install-recommends python3-pip git curl zstd libegl1 libgl1 && rm -rf /var/lib/apt/lists/* && \
         curl -fsSL https://ollama.com/install.sh | sh && \
         (ollama serve > /dev/null 2>&1 &) && sleep 5 && ollama pull qwen3-vl:2b-instruct && \
         pip install --no-cache-dir --break-system-packages --ignore-installed "numpy<2" ultralytics git+https://github.com/ultralytics/CLIP.git && \
+        pip install --no-cache-dir --break-system-packages --no-deps pyorbbecsdk2 && \
+        mkdir -p /usr/share/glvnd/egl_vendor.d && printf '{"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0"}}' > /usr/share/glvnd/egl_vendor.d/10_nvidia.json && \
         yolo settings weights_dir=/opt/models/weights && \
         mkdir -p /opt/models && cd /opt/models && python3 -c "from ultralytics import YOLOWorld; YOLOWorld('yolov8s-worldv2.pt').set_classes(['chair'])"; \
     fi

@@ -1,0 +1,599 @@
+% 5th Nov 2026, 12 noon: [Group] Design report, describing your research hypothesis, the
+% proposed morphological, electronic and software components of your system, and your
+% proposed experimental validation methodology. Include preliminary work you have done
+% already (you should have done quite a bit already!) demonstrating that the design makes
+% sense. You must not exceed 5 double column pages, including all references, figures etc. [20%
+% of coursework mark]. You will receive feedback.
+
+\documentclass[conference]{IEEEtran}
+
+% Page margins
+\usepackage[a4paper, left=1.35cm, right=1.35cm, top=1.3cm, bottom=1.4cm]{geometry}
+\usepackage{graphicx}
+\usepackage{subcaption}
+
+% Space between the two columns
+\setlength{\columnsep}{0.7cm}
+
+% Reduce spacing around headings
+\usepackage{titlesec}
+
+% Keep original IEEE heading formatting
+% Only change the spacing
+\titlespacing*{\section}{0pt}{12pt}{5pt}
+\titlespacing*{\subsection}{0pt}{9pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{7pt}{3pt}
+
+% Increase heading font sizes without changing their styling
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd{\@sect}{\@tempskipa #5\relax}{\@tempskipa #5\relax}{}{}
+\makeatother
+
+% Reduce spacing in lists
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=*}
+
+% Reduce spacing around figures and tables
+\setlength{\textfloatsep}{6pt}
+\setlength{\floatsep}{5pt}
+\setlength{\intextsep}{5pt}
+
+% Your existing packages
+\usepackage{graphicx}
+\usepackage[colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue]{hyperref}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, fit, backgrounds}
+
+
+
+\title{ Design Report - Team NaviGoat}
+\author{Tara Venkatesam, Antoni Tokarski, Nabiha Saqib, Max Ryan,
+Benoît B.M, Enid Maci, \\Evangelia (Lia) Kommata, Mikhail Ischenko,
+Maciej Grzegorczyk and Flavio Gazzetta}
+
+\date{October 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report presents the design and preliminary development of NaviGoat, an autonomous, socially aware robotic guide for visually impaired individuals. Built on a Pioneer 3-AT mobile base, the system combines 3D LiDAR-based SLAM, Nav2 path planning, Model Predictive Control (MPC) and RGB-D pedestrian tracking to enable safe navigation in dynamic environments. A guiding pole and three-level haptic and audio feedback system aim to provide intuitive guidance while minimising cognitive workload. Preliminary work demonstrates robot teleoperation, simulated mapping, pedestrian tracking, object recognition and speech-based interaction. The proposed system will be evaluated through controlled navigation experiments assessing collision avoidance, motion smoothness, feedback latency and user experience.
+\end{abstract}
+
+
+\section{\textbf{Introduction and Research Hypothesis}}
+% Introduction: what robotic system are you designing and what is its purpose? What is the hypothesis (-es) that you will be testing regarding its performance, and associated human factors?
+
+Navigating unfamiliar and crowded environments remains a significant challenge for visually impaired individuals. Although options such as white canes and guide dogs provide valuable assistance, they cannot provide detailed information about the surrounding environment or autonomously plan unknown routes.
+<
+The dynamic nature of social environments, which are prone to moving obstacles and unpredictable pedestrians, creates further complications. These complex situations should be tackled, while ensuring the user's comfort and the respect of social norms. These observations motivate the research question:\\
+
+%\textbf{\emph{How can a socially aware guide robot with intelligent feedback enable visually impaired individuals to navigate dynamic environments?}}\\
+
+\textbf{\emph{Can a socially aware guide robot with intelligent feedback enable smoother and safer navigation for visually impaired users across dynamic environments while ensuring a positive experience?}}\\
+
+This report proposes Pete, an autonomous guide robot built on a Pioneer 3-AT mobile base. The system uses LiDAR-based Simultaneous Localisation and Mapping (SLAM) to map its surroundings, estimate its position and plan socially compliant paths. The user follows the robot through a guiding handle, while a three level haptic and audio feedback system communicates navigation cues and warnings according to their urgency.
+
+\section{\textbf{Literature Review}}
+% Do not use only blogs/web references for this, or just GenAI resources, but explore scientific bibliographic resources (IEEExplore, ACM, Google Scholar, Arxiv, DBLP, …) to demonstrate knowledge of the related work.
+%Note: Could merge with another section if need be 
+
+% Primary and secondary research was conducted to make informed design choices for NaviGoat. For primary research, contact was made with the Royal National Institute of Blind People \cite{rnib2026} to obtain first hand accounts and assess what features would be more useful and valued in the robot implementation. We are awaiting a response on whether it is possible to conduct a short survey, which would allow better requirements capture.
+
+
+Our research focused on identifying and reviewing existing assistive navigation systems, recognizing their limitations in the context of our research focus. 
+
+For their outdoor and uneven terrain navigation   and , quadruped robotsWang et al. \cite{wang2023quadruped} evaluated quadruped and wheeled robotic guides for visually impaired users, concluding that walking noise and unstable movements of quadruped robots reduced user comfort and trust. On the basis of these findings, a wheeled base morphology was selected, with the aim of achieving smooth navigation. 
+
+
+Furthermore, Guerrerio et al. \cite{guerreiro2019cabot} developed CaBot, an autonomous guide robot with a vibrating handle for user guidance, demonstrating the feasibility of an approach similar to NaviGoat's. Nevertheless, their evaluation did not account for dynamic environments with moving pedestrians, which is an area requiring further investigation as the authors identified. This motivates our focus on socially aware navigation. Singamaneni et al. \cite{singamaneni2024social} emphasized the importance of pedestrian movements and keeping safe distance. This motivated NaviGoat's use of Model Predictive Control (MPC) for planning safe paths around moving pedestrians.
+
+
+Additionally, effective communication with the user is fundamental. Martinez et al. \cite{martinez2014feedback} explored audio and haptic feedback for visually impaired navigation, concluding that audio guidance leads to higher cognitive workload when it comes to experienced white cane users during short-range navigation. Building on this, our project proposes a three level feedback system, using directional handle vibrations for routine navigation, wristband vibrations for cautionary alerts, and audio feedback for urgent warnings. 
+
+
+Overall, these findings shaped this project's design decisions, which includes a wheeled robotic base, socially aware navigation, and an urgency based multimodal feedback, in order to provide safe and comfortable guidance to the user.
+
+\section{\textbf{Proposed System Design}}
+%Outline of your design, explaining design choices, and justification for your selected design.
+
+
+\subsection{\textbf{System Overview}}
+
+NaviGoat is built on a Pioneer 3-AT mobile base, equipped with a Unitree L1 3D LiDAR and an Orbbec Femto Bolt RGB-D camera for environmental perception, localisation and autonomous navigation. A guiding pole connects the robot to the user, providing both physical guidance and an interface for user interaction.
+
+The guiding pole features two degrees of freedom, with passive gas springs connecting it to the robot's base. These actuators provide directional resistance to guide the user's movements, while sensors around the handle detect whether the user is holding the pole.
+
+To communicate navigation information without overwhelming the user, a multimodal feedback system is proposed, organised into three levels of urgency:
+
+\begin{enumerate}
+    \item {Handle vibrations:} Routine navigation cues, including directional guidance and upcoming turns.
+    \item {Vibrating wristbands:} Cautionary alerts, such as the direction of approaching pedestrians or nearby hazards.
+    \item {Audio feedback through an earpiece:} Urgent warnings, including imminent collisions and emergency stops.
+\end{enumerate}
+
+This feedback hierarchy aims to minimise unnecessary interruptions while ensuring that critical information reaches the user promptly. Together, the guiding pole, wearable feedback devices and autonomous navigation system are intended to provide an intuitive and accessible guiding experience.
+
+\subsection{\textbf{Hardware Design}}
+
+\subsubsection{\textbf{Morphology}}
+A wheeled base was chosen over a quadrupedal base to prioritise smooth movement and user comfort. The walking gait of a quadrupedal robot can introduce vibrations that may be transmitted through the guiding pole, reducing user comfort. Furthermore the noise and ground vibrations generated as they move could cause discomfort or intimidation to nearby pedestrians and increasing the user's sense of isolation.
+
+Particular attention has been paid to chose the morphology such that the robot is not intimidating is the social acceptance of the robot, as users may be reluctant to use a device that attracts unwanted attention or makes them feel uncomfortable in public. To address this, NaviGoat adopts a friendly, goat-inspired design, aiming to evoke the positive perception commonly associated with guide dogs. Additionally, external lighting and a projection system will communicate the robot's intentions to nearby pedestrians, facilitating interactions and improving predictability in shared spaces.
+
+
+\subsubsection{\textbf{Guide Pole}}
+
+The guide pole is the users main physical link to the robot and the primary method of feedback.  
+
+Its morphology was specifically chosen to resemble a white cane to allow users to quickly adapt to a familiar shape.  
+
+The pole is mounted onto the base through a Cardam universal gimbal joint, constrained by four passive pistons mounted on aluminium extrusion around it, which allows movement of the pole with 2DoF (pitch and roll). 
+
+An IMU connected at the base of the pole measures its angle and acceleration. This lets the user indicate a preferred direction by pushing the pole. It also further provides the pole-acceleration which is used as a measure of smoothness section~\ref{Exp_Validation}.
+
+\begin{figure}[H]
+    \centering
+    \scalebox{1}[0.85]{\includegraphics[height=0.75\linewidth]{images/stick.png}}
+    \caption{Design of the Guide Pole}
+    \label{fig:guide_pole}
+\end{figure}
+
+At the tip of the pole, an ergonomic grip containing 4 vibration motors is mounted, which will allow for directional hazard warnings. We also take this opportunity to implement a convenient user feedback system, in the form of a joystick mounted on the pole's end, to allow for a manual drive mode. In addition, two buttons will be added to implement mode control and emergency stop. 
+
+\subsubsection{\textbf{Wrist Band}}
+%===============old version======================
+%Two wireless Bluetooth connected wristbands, one on each wrist, form the secondary level of the feedback hierarchy.  Splitting feedback by wrist gives a direct left/right mapping. A pedestrian approaching from the left vibrates the left band so that the user can instinctively tell the direction, decreasing reaction time to the alert. 
+%Having this additional level of feedback for low hazard cautionary alerts or finding items of interest, decreases chances of confusion with routine guidance cues.
+
+%Additionally, implementing an array of haptic feedback motors, provides the user with a method of finding the robot in case they lose contact with by vibrating in the direction of the robot. It also enables the user to find items by vibration of the the wrist band in the directon of the item. 
+%==================long version====================
+
+%The wristband will provide directional cautionary alerts about nearby hazards, such as passing pedestrians. Four small vibration motors mounted on an adjustable Velcro strap will indicate hazards in front of, behind, to the left and to the right of the user. The strap will also contain an IMU, while a second band further up the forearm will hold the ESP32, motor drivers and battery. The ESP32 will receive hazard information from the rover over Wi-Fi and activate the appropriate motors.
+
+%The IMU’s accelerometer and gyroscope will estimate wrist orientation following calibration in a known starting posture. The controller will use this estimate to adjust the motor mapping as the wrist rotates, so that a left-side alert remains associated with the user’s left even when the hand turns palm-up or palm-down. Gravity provides a reference for tilt, but maintaining alignment during horizontal rotation will require an additional heading reference or periodic recalibration.
+
+%===============short version===================
+Four vibration motors on an adjustable Velcro wrist strap will provide front, rear, left and right cautionary alerts about nearby hazards, such as passing pedestrians. A second band further up the forearm will house the ESP32, motor drivers, battery and regulator, with the ESP32 receiving hazard information from the rover over Wi-Fi. A wrist-mounted IMU will track rotation from a calibrated starting posture to adjust the motor mapping as the hand turns, with an additional heading reference or periodic recalibration required to maintain horizontal alignment.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{images/majieck_design.png}
+    \caption{Wristband electronics and communication interfaces.}
+    \label{fig:wristband_diagram}
+\end{figure}
+% Vocal communication with the robot is implemented using an earpiece to allow the user to be informed of more critical alerts. The inbuilt mic in the earpiece would also enable the user to give more complex vocal instructions, allowing a greater range of different problems to be articulated by the robot system, e.g. ability to ask for guidance to a given train station.
+
+\subsection{\textbf{Software Design}}
+The compute of the robot will be distributed across two Jetson Orin Nanos. These single board computers (SBCs) will be connected via Ethernet to minimise communication latency between them.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{images/max_design.png}
+    \caption{Communication Interfaces}
+    \label{fig:comms}
+\end{figure}
+
+
+
+
+
+\subsubsection{\textbf{Simultaneous Localization and Mapping}}
+A LiDAR was chosen over a depth camera for SLAM due to its greater robustness to varying lighting conditions, particularly direct sunlight and low-light environments, which the robot is expected to encounter during outdoor navigation. LiDARs also have greater range than depth cameras which will be beneficial since we will be operating outside.
+Data from a 3D LiDAR, an IMU and the wheel encoders on the P3-AT base will be fused to improve localisation accuracy. The LiDAR will provide environmental geometry while the IMU and encoders will provide motion estimates to assist with pose estimation \cite{s26103045}. Moving objects including people need to be filtered out from the map. 3D SLAM was chosen over 2D SLAM since the robot must be able to operate in crowded spaces. In such environments many points will hit people instead of walls, which would make mapping the environment difficult. The system will generate 3D maps of the environment which can also be saved and reused for future navigation. Slices of the 3D point-cloud can be used to generate 2D occupancy grids for navigation. 
+
+\subsubsection{\textbf{Autonomy and Navigation}}
+
+The autonomous navigation system is designed with a focus on user experience, safety and practical use. Beyond providing a collision-free route, the robot should ideally guide the user safely, maintain comfortable motion, and assist complementary subsystems in enabling the user to navigate various social situations naturally.
+
+The navigation system uses the ROS 2 Navigation Stack (Nav2) for global path planning, combined with a custom Model Predictive Control (MPC) controller for local navigation. Nav2 will use the 2D occupancy grid generated from the SLAM system to plan a route to the destination. A local costmap, updated using live LiDAR measurements, will represent nearby obstacles and changes in the environment.
+
+A custom MPC controller will be integrated into the Nav2 Controller Server. MPC was selected for its ability to anticipate the robot's motion and explicitly account for kinematic and safety constraints. At each control step, it will optimise a trajectory over a finite prediction horizon, balancing progress towards the destination, obstacle clearance and smoothness of motion. Only the first control command will be executed before replanning using updated sensor measurements.
+
+The resulting linear and angular velocity commands will be transmitted to the Pioneer 3-AT through the \texttt{/cmd\_vel} topic. Nav2 will retain responsibility for global planning and navigation recovery, while the custom controller will provide the flexibility required for the socially aware behaviours described below.
+
+\paragraph{\textbf{Social Navigation}}
+
+The primary challenge is guiding visually impaired users through crowds without causing collisions or uncomfortable interactions with pedestrians. This requires understanding where pedestrians are, predicting their movements and choosing trajectories that respect social conventions.
+
+A forward-facing RGB-D camera will be used for pedestrian detection. YOLO will identify pedestrians, and depth measurements will be transformed into the map reference frame.
+
+To improve tracking robustness, pedestrian detections will be associated with the corresponding clusters in the 3D LiDAR point cloud. This will allow LiDAR measurements belonging to pedestrians to be distinguished from the static environment.
+
+Pedestrian detections will be associated across successive observations to estimate individual positions and velocities. A tracking algorithm, based on Kalman filtering, will maintain these estimates and predict pedestrian positions over the MPC planning horizon \cite{alahi2016social}.
+
+These predictions will be incorporated into the MPC objective function to minimise collision risk. Additional costs will discourage behaviours such as cutting through groups, passing unnecessarily close to people or making abrupt manoeuvres.
+As a stretch goal, we will investigate Deep Residual Model Predictive Control (DR-MPC), proposed by Han et al. \cite{han2025drmpc}. This approach combines an MPC baseline with residual reinforcement learning to improve social navigation through experience.
+
+\paragraph{\textbf{Person Following}}
+
+Person following will reuse shared YOLO-World pedestrian detections and RGB-D position estimates to follow a designated individual. A target-selection module will associate the chosen person with a tracked pedestrian, optionally initialised through contact recognition. The target's position will be used to generate updated Nav2 goals at a specified following distance, while the navigation controller handles obstacle avoidance. Target identity will be monitored across frames, with loss of tracking triggering a safe pause rather than switching to another pedestrian.
+
+% \paragraph{Object Tracking}
+
+% The object detection system described previously will also support object-directed navigation. Detected objects will be localised using depth measurements and transformed into map coordinates through TF2. Their positions can then be used to generate navigation goals, allowing the robot to guide the user towards a requested object rather than simply reporting its location.
+
+\paragraph{\textbf{GPS-Based Outdoor Navigation}}
+
+To extend navigation beyond pre-mapped areas, a GPS navigation layer will guide the user through unfamiliar outdoor environments. Nav2 can only plan within the map built by SLAM, this layer provides the long-range route and supplies Nav2 with intermediate goals along it. Routes will be planned on OpenStreetMap (OSM) which also include accessibility tags such as signalled crossings and tactile paving, allowing a custom route cost to favour safer crossings over shorter routes. Since GPS errors of 5–30 m are common in urban areas, a localisation module will fuse GPS fixes with IMU and wheel-encoder data. A route follower will select goal points a short distance ahead along the route, which tolerates GPS noise and allows the robot to rejoin the route after avoiding obstacles. A mission manager will monitor progress, replan when the robot leaves the route and pause at road crossings.
+
+% \paragraph{\textbf{Contact Recognition}}
+
+% NaviGoat will recognise previously enrolled contacts using the Orbbec Femto Bolt RGB-D camera and a Jetson Orin Nano. Pretrained SCRFD and ArcFace models will be used for face detection and embedding extraction, avoiding the need to train a recognition network from scratch. Facial embeddings will be compared against a local database using cosine similarity, with calibrated thresholds and multi-frame verification to reduce false identifications.
+
+% Contacts will be enrolled using multiple facial samples collected with consent. Recognition performance will depend on viewing distance, illumination and facial orientation; these limitations will be characterised experimentally. TensorRT FP16 acceleration will be investigated if required to reduce inference latency.
+
+% The module will output the recognised contact identifier, face bounding box, similarity score and timestamp. These outputs will be provided to the person-following subsystem for association with pedestrian tracks, enabling commands such as ``Follow Sarah''. Uncertain identifications will not initiate following.
+
+\subsubsection{\textbf{Speech Interface and Command Interpretation}}\label{sec:speech}
+The speech interface allows the user to talk to the robot through a commercial wireless earpiece directly connected to the LLM Jetson over Bluetooth. Its microphone captures spoken requests, and its speaker delivers  urgent warnings of the third feedback level (e.g. imminent collision or emergency stop), and direct responses to the user's perception questions. 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    scale=0.9, transform shape,
+    font=\scriptsize,
+    box/.style={draw, rounded corners=1pt, align=center, minimum height=7mm, minimum width=20mm, inner sep=2pt},
+    mod/.style={box, minimum width=15.5mm, inner sep=1pt},
+    arr/.style={-{Stealth[length=1.6mm]}, thick}
+]
+
+% Row 1 and 2 are centred on Whisper and the controller
+\node[box] (asr) {Speech to Text\\ (Whisper)};
+\node[box, left=6mm of asr]   (mic)   {Earpiece\\mic};
+\node[box, right=6mm of asr]  (rules) {Stop and\\help rules};
+\node[box, below=5mm of asr]  (ctrl)  {Controller};
+\node[box, below=5mm of rules] (qwen) {Qwen3-VL};
+% Row 3: the modules, centred under the controller
+\node[mod, below=7mm of ctrl] (gps)    {GPS};
+\node[mod, left=1mm of gps]   (nav)    {Navigation};
+\node[mod, left=1mm of nav]   (follow) {Follow};
+\node[mod, right=1mm of gps]  (perc)   {Perception};
+\node[mod, right=1mm of perc, fill=gray!20] (stop) {Stop};
+\node[draw, dashed, inner sep=1.5mm, fit=(follow)(nav)(gps)(perc)(stop)] (mods) {};
+% Row 4: the warning path, centred on the text to speech block
+\node[box, anchor=north] (tts) at ([yshift=-5mm]mods.south) {Text to\\speech};
+\node[box, left=6mm of tts]  (safe) {Safety flag};
+\node[box, right=6mm of tts] (ear)  {Earpiece\\speaker};
+\draw[arr] (mic) -- (asr);
+\draw[arr] (asr) -- (rules);
+\draw[arr] (rules) -- (qwen);
+\draw[arr] (qwen) -- (ctrl);
+\draw[arr, dashed] (rules.south west) -- (ctrl.north east);
+\draw[arr] (ctrl.south) -- (ctrl.south |- mods.north);
+\draw[arr] (mods.south -| safe.north) -- (safe.north);
+\draw[arr] (safe) -- (tts);
+\draw[arr] (tts) -- (ear);
+\draw[arr] (perc.south) -- ++(0,-3.5mm) -| (tts.north);
+\end{tikzpicture}
+\caption{Speech interface. Stop and help requests skip Qwen (dashed). The robot speaks Perception's answers and emergencies.}
+
+\label{fig:speech}
+\end{figure}
+
+Fig.~\ref{fig:speech} shows how a request is processed. The microphone is continuously monitored and the audio is segmented into phrases by a voice activity detector. Every phrase gets transcribed on the Jetson by Whisper \cite{radford2023whisper}, an open-source speech recognition model based on an encoder–decoder transformer. The small English-only base model runs on the GPU, and is about four to five times faster than on the CPU, allowing for low enough delay for conversation. A phrase is only acted on when it includes the wake word "Pete", the robot's name.  Stop and help requests are interpreted by fast rules, getting an immediate response. The other requests are read by a small open-source vision-language model (Qwen3-VL 2B~\cite{bai2025qwen3vl}) that also handles scene description. According to the request, the controller selects an operating mode (e.g. Follow, Navigation, GPS, Perception) and sends the relevant data to the corresponding module. The robot speaks only to answer perception questions and to give urgent safety warnings, because audio guidance can increase cognitive workload \cite{martinez2014feedback}. Urgent safety warnings interrupt answer in progress. 
+
+\subsubsection{\textbf{Object Finding and Scene Description}}
+The user will be able to ask the robot to find everyday objects, such as cups, chairs or door handles, or to describe what is in front of them (Fig.~\ref{fig:object_finding}). Requests arrive as text from the speech interface (Section~\ref{sec:speech}). Those the command parser does not recognise, and scene descriptions, are handled by Qwen3-VL, similar to the approach of Lin et al.~\cite{s26103045}, while an open vocabulary YOLO-World model \cite{cheng2024yoloworld} runs continuously on the RGB-D camera feed. Both models will run locally on the Jetson, so the system works without an internet connection and with low latency. Qwen3-VL 2B was chosen as it uses around 2\,GB of memory, leaving room on the 8\,GB Jetson for the other subsystems. The same YOLO-World model will also be used for pedestrian detection, and objects the robot can guide the user to will be published in the same ROS~2 package as the detected people, so they can be used directly as navigation goals. Object positions will be given relative to the user as a direction and a distance taken from the camera's depth image.
+
+
+% \begin{figure}[H]
+% \centering
+% \begin{tikzpicture}[
+%     scale=0.85, transform shape,
+%     font=\scriptsize,
+%     box/.style={draw, rounded corners=1pt, align=center, minimum height=7mm, minimum width=18mm, inner sep=2pt},
+%     arr/.style={-{Stealth[length=1.6mm]}, thick},
+%     lbl/.style={font=\tiny, inner sep=1pt}
+% ]
+% % Row 1 and 2: understanding the request
+% \node[box] (parser) {Command\\parser};
+% \node[box, left=8mm of parser]  (req)    {Text\\request};
+% \node[box, right=8mm of parser] (qwen)   {Qwen3-VL};
+% \node[box, below=4mm of parser] (target) {Target\\object};
+% \node[box, below=4mm of qwen]   (reply)  {Spoken\\reply};
+% % Row 3: finding it in the camera image
+% \node[box, below=6mm of target] (yolo)   {YOLO-World};
+% \node[box, left=8mm of yolo]    (cam)    {RGB-D\\camera};
+% \node[box, right=8mm of yolo]   (locate) {Locate object\\(direction, depth)};
+% \node[draw, dashed, inner sep=1.5mm, fit=(cam)(yolo)(locate)] (vision) {};
+
+% \draw[arr] (req) -- (parser);
+% \draw[arr] ([yshift=2mm]parser.east) -- node[above, lbl] {unclear} ([yshift=2mm]qwen.west);
+% \draw[arr] ([yshift=-2mm]qwen.west) -- ++(-4mm,0) |- (target.east);
+% \draw[arr, dash pattern=on 1.5pt off 1.5pt] (parser) -- (target);
+% \draw[arr] (qwen) -- node[right, lbl] {describe} (reply);
+% \draw[arr] (target) -- (yolo);
+% \draw[arr] (cam) -- (yolo);
+% \draw[arr] (yolo) -- (locate);
+% \draw[arr] (reply.south |- locate.north) -- (reply.south);
+% \end{tikzpicture}
+% \caption{Object finding. Known commands skip Qwen (dashed).}
+% \label{fig:object_finding}
+% \end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.49\linewidth}
+        \includegraphics[width=\linewidth,height=0.63\linewidth]{images/chair.png}
+        \caption{Chair found}
+        \label{fig:chair}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.49\linewidth}
+        \includegraphics[width=\linewidth,height=0.63\linewidth]{images/no_chair.png}
+        \caption{No chair in view}
+        \label{fig:no_chair}
+    \end{subfigure}
+    \begin{subfigure}[b]{0.49\linewidth}
+        \includegraphics[width=\linewidth,height=0.63\linewidth]{images/lib.png}
+        \caption{Library}
+        \label{fig:lib}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.49\linewidth}
+        \includegraphics[width=\linewidth,height=0.63\linewidth]{images/park_noticed.png}
+        \caption{Park}
+        \label{fig:park}
+    \end{subfigure}\\[0.02\linewidth]
+    \caption{Scene description (a, b) and object finding (c, d).}
+    \label{fig:object_results}
+\end{figure}
+
+
+
+\section{\textbf{Experimental Validation Methodology}}
+\label{Exp_Validation}
+% Outline of your planned experiments, paying particular emphasis on your initial thoughts of how you will evaluate the design, and confirm/disprove your initial hypothesis.
+
+%Add quantifiable results to confirm this. 
+To validate the the robot, the agile framework was followed, to allow quick, iterative development of the system. 
+Initial sprints will focus on developing and individual systems and later sprints will start integrating the systems together, moving upwards until we have the whole robotic system. This approach would allow quicker debugging and error correction.  
+
+The table below highlights how the individual systems will be validated: 
+
+\begin{table}[H]
+\centering
+\label{tab:individual_sys_val}
+\begin{tabularx}{\columnwidth}{>{\raggedright\arraybackslash\hsize=0.3\hsize}X
+                               >{\raggedright\arraybackslash\hsize=0.8\hsize}X
+                               >{\raggedright\arraybackslash\hsize=0.9\hsize}X}
+
+\ System & Validation Method & Quantifiable Criteria \\
+\hline
+%Object Finding & Common objects (e.g. cups, chairs, remote) placed at unknown, random positions and user wold ask robot to find each item & Time taken by user to find object, time from request to response, accuracy of directions given \\
+
+
+Localisation Error & Calculate pose error & Keep pose error under 20cm  \\
+\hline
+\end{tabularx}
+\end{table}
+
+%To test the object finding, common objects such as cups, chairs and remotes would be placed at unknown, random positions and distances from the robot. The user would ask the robot to find each object, and the reported clock direction and distance would be compared against the measured position. The time taken from the request to the response would also be recorded to ensure the system responds quickly enough to be useful.
+
+% Recognition will be tested with consenting unknown participants across different lighting conditions, distances and head orientations. False acceptance and rejection rates will guide threshold selection, while latency will be measured on the Jetson. Integration tests will check that the correct face location and contact identity are passed to person following; uncertain matches must not trigger following.
+
+For the completed robotic system, two main areas of validation were identified. Firstly, the ability of the robot to successfully navigate in a crowd and, secondly, correct feedback being timely provided to the user. A series of controlled experiments planned in Dalby Court, Imperial College London would be conducted with three different blindfolded participants, with informed consent. Multiple spotters will walk alongside the participant, one holding the emergency stop to ensure safety. The blindfolded participants are not fully representative of visually impaired users, which is an acknowledged limitation of this validation methodology. 
+
+
+Each trial is a fix route of 50 m with varying conditions detailed below. Each run is conducted twice to ensure repeatability: 
+%\begin{enumerate}
+ %   \item Without pedestrians and obstacles in the path to ensure validation of navigation and smooth robot movement and user comfort
+  %  \item Without pedestrians but with static obstacles (chairs and tables)
+  %  \item With three pedestrians (oncoming, crossing and sharply cutting of the person) along with static obstacles 
+  %  \item With at least 10 pedestrians, split into groups as well as individual walkers along with static obstacles 
+%\end{enumerate}
+
+
+\begin{table}[H]
+\centering
+\label{tab:scenarios}
+\begin{tabularx}{\columnwidth}{>{\raggedright\arraybackslash\hsize=0.1\hsize}X
+                               >{\raggedright\arraybackslash\hsize=0.8\hsize}X
+                               >{\raggedright\arraybackslash\hsize=1.1\hsize}X}
+
+\ & Environment & Validates (key measures) \\
+\hline
+1 & Clear path without pedestrians and obstacles &
+Baseline guidance and motion smoothness. Gives
+reference values for completion time and user comfort \\
+
+2 & Static obstacles (chairs and tables) &
+Obstacle avoidance and path deviation \\
+
+3 & Static obstacles + 3 scripted pedestrians (oncoming, crossing, sudden
+cut-in) & Social Navigation and urgent audio warning \\
+
+4 & Static obstacles + $\geq$10 pedestrians (in groups and walking alone) &
+Realistic crowd test of social navigation and pedestrian tracking \\
+
+5 & Designated person walking a route with turns, other pedestrians and temporary occlusions &
+Person following: distance error, target retention, incorrect target switches and safe stopping on target loss \\
+
+\hline
+\end{tabularx}
+\end{table}
+
+To evaluate the success of each run, six quantifiable criteria are chosen, representing safety and smoothness: 
+\begin{enumerate}
+    \item Collision: Any contact between the robot/user and a pedestrian/obstacle seen via video
+    \item Near Misses: minimum distance between robot/user $<$ 1.5m 
+    \item Abrupt Stops: decelerations above 0.5\,m/s$^2$, taken from the filtered odometry.
+    \item Smoothness: acceleration measured on the base of the pole with an IMU 
+    \item Time to complete run 
+    \item Time to communicate feedback at each urgency level 
+\end{enumerate}
+
+To evaluate user experience and cognitive load the NASA Task Load Index (TLX) questionnaire will be used by obtaining an overload workload score based on mental, physical and temporal demand,  performance, effort, and frustration \cite{nasa_tlx_web}.
+
+\section{\textbf{Preliminary Work and Results}}
+
+\subsection{\textbf{Manual Movement of Base}}
+The Pioneer 3-AT has been brought up under ROS~2 Jazzy using the \texttt{p2os2} driver, connected to the base's controller over USB-serial.
+The robot has been driven by both by keyboard teleoperation and by a scripted test node that commands a set speed for a set time. The wheel odometry and battery voltage can be obtained reliably. For safety during this initial testing, speed was capped at 0.3m/s.
+
+\subsection{\textbf{Hardware}}
+A pole has been obtained and preliminarily fastened to the P3-AT. A first CAD design of the grip has been completed.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{images/mishSLOP.png}
+    \caption{Sketch of First Iteration of the Handle Grip with Vibrational Motors}
+    \label{fig:placeholder}
+\end{figure}
+
+
+
+\subsection{\textbf{Electronics}}
+The wristband electronics architecture was developed and components
+selected to minimise bulk and improve comfort. The XIAO ESP32-C3
+was chosen for its compact size, integrated Wi-Fi and Arduino
+support, alongside thin 10\,mm ERM motors, two DRV8833 drivers
+for independent motor control and an LSM6DSOX IMU for orientation
+tracking. 
+
+\subsection{\textbf{Software}}
+\paragraph{\textbf{SLAM}}
+Using the Unitree L1 LiDAR and its internal IMU with RTAB-Map can localise the robot to within 5cm of its actual position running on the Jetson. Before mapping the point cloud is filtered using a three-scan window, accounting for robot movement to identify and reduce points associated with moving objects.
+
+
+\paragraph{\textbf{Navigation}}
+
+\subsection{Preliminary Work}
+
+The Pioneer 3-AT simulation was adapted to support multiple Gazebo environments through parameterised ROS 2 launch files, allowing the same navigation setup to be evaluated in indoor and warehouse scenarios. The URDF/Xacro configuration was adjusted to integrate the 3D LiDAR and maintain consistent odometry and TF frames.
+
+For the 2D occupancy map, RTAB-Map's ground-height filtering was used to prevent floor returns and low-lying, traversable features from being marked as obstacles. Two-dimensional ray tracing was enabled to infer free space along LiDAR rays, reducing unknown cells in the resulting map. This configuration follows the approach described by RTAB-Map developer Mathieu Labb\'e \cite{labbe_rtabmap_projection}. Figure~\ref{fig:ground_filtering} compares the resulting maps before and after filtering in both environments.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth,height=3.5cm]{images/indoor_before.png}
+        \caption{Indoor: before}
+        \label{fig:indoor_before}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth,height=3.5cm]{images/indoor_after.png}
+        \caption{Indoor: after}
+        \label{fig:indoor_after}
+    \end{subfigure}
+
+    \medskip
+
+    \begin{subfigure}[b]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth,height=3.5cm]{images/warehouse_before.png}
+        \caption{Warehouse: before}
+        \label{fig:warehouse_before}
+    \end{subfigure}\hfill
+    \begin{subfigure}[b]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth,height=3.5cm]{images/warehouse_after.png}
+        \caption{Warehouse: after}
+        \label{fig:warehouse_after}
+    \end{subfigure}
+
+    \caption{Indoor and warehouse 2D occupancy maps before and after ground-height filtering and ray tracing.}
+    \label{fig:ground_filtering}
+\end{figure}
+
+RTAB-Map uses the 3D LiDAR point cloud for SLAM and generates a 2D occupancy grid for global navigation. The height threshold was chosen to avoid unnecessarily blocking paths with features the robot can traverse; such filtering alone does not establish terrain traversability. Figure~\ref{fig:indoor_navigation} shows the simulated environment and navigation visualisation in RViz.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth,height=3cm,keepaspectratio]{images/indoor_sim.png}
+        \caption{Indoor Gazebo simulation}
+        \label{fig:indoor_sim}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth,height=3cm,keepaspectratio]{images/indoor_nav.png}
+        \caption{Navigation visualisation in RViz}
+        \label{fig:indoor_nav}
+    \end{subfigure}
+
+    \caption{Indoor simulation and corresponding RViz navigation visualisation.}
+    \label{fig:indoor_navigation}
+\end{figure}
+
+\paragraph{\textbf{Social navigation}}
+The Orbbec Femto Bolt camera was integrated with a YOLO-World model to detect and track people.
+Detected people were identified using bounding boxes, with depth measurements extracted from the central region of each bounding box. These depth measurements, combined with the camera's intrinsic parameters, were used to estimate each person's position in 2D space.
+Successive position measurements were processed using a Kalman filter to estimate each person's velocity and predict their short-term future position. The system was successfully tested on the Jetson, achieving a preliminary latency of approximately 150 ms.
+
+\paragraph{\textbf{Person Following}}
+
+The existing YOLO-World and RGB-D pedestrian tracking prototype provides the perception foundation for person following. Preliminary design has established a target-selection and following architecture that reuses shared pedestrian position estimates and communicates dynamic goals to Nav2. Target-loss handling and identity continuity have been identified as key requirements, particularly when pedestrians cross or become occluded. Closed-loop person-following tests remain future work.
+
+
+\paragraph{\textbf{Contact Recognition}}
+
+Initial development has focused on implementing a modular facial recognition pipeline using pretrained SCRFD and ArcFace models. A local prototype codebase has been established, with components for face detection, facial alignment, embedding extraction and cosine similarity-based identity matching. The system architecture also incorporates contact enrolment, confidence thresholding and multi-frame verification to reduce incorrect identifications. An interface has been specified for passing recognised identities, bounding boxes and timestamps to the person-following subsystem. Deployment on the Jetson Orin Nano, integration with the Orbbec Femto Bolt and quantitative performance evaluation remain the next development stages.
+
+\paragraph{\textbf{Object Finding and Scene Description}}
+A working prototype was run entirely on the Jetson with the colour and depth streams of the Orbbec Femto Bolt (Fig.~\ref{fig:object_results}). Indirect requests were mapped onto known objects, so ``I would like a place to sit down'' located a chair (Fig.~\ref{fig:chair}), and the user was told when none was in view (Fig.~\ref{fig:no_chair}). Distances were measured as the median depth over the centre of each detected object, and directions from the camera's calibrated field of view. In scene descriptions, the number of people and the object positions were added from the detector rather than the language model, which otherwise invented them (Fig.~\ref{fig:lib}). Outdoor terrains were simulated by placing the camera in front of photographs (Fig.~\ref{fig:park}), so distances in those tests refer to the photograph. On the Jetson, replies took on average 2\,s.
+
+\paragraph{\textbf{Speech}}
+
+% \paragraph{integration}
+% Hopefully we get some integration done by then
+
+\section{\textbf{Discussion and Future Work}}
+%all the stretch goals 
+% \begin{enumerate}
+%     \item pole height adjustable 
+%     \item Dog -\> Stairs
+%     \item interface with google street map view (are we doing that ?) 
+%     \item smart glasses 
+%     \item wrist bands guiding to door handles/ card scanners 
+%     \item improve wristbands batteries / make smaller and more discrete 
+%     \item People mood assessor / group sentiment 
+%     \item Emergency response
+%     \item longterm planning / multiple stops / route selection / complex itinerary 
+%     \item 
+%     \item big data integration
+% \end{enumerate}
+\paragraph{\textbf{Robotic Dog}}
+Replacing the wheeled base with a quadrupedal base to overcome its current terrain limitations, allowing users to be guided up and down stairs and uneven terrains. 
+
+\paragraph{\textbf{Smart Glasses}}
+Smart glasses would provide an elegant solution by incorporating the earpiece, microphone and speaker functionality, as well as providing a non-intrusive camera that is mounted to the head so the robot can know in which direction the person is facing.
+
+\paragraph{\textbf{Emergency Response}}
+The system could detect if the user has fallen over and contact emergency services and share their current location if they fail to get back up.
+
+\paragraph{\textbf{Object Interaction Assistance}}
+A potential future extension to the wristband will guide the user’s hand towards objects such as door handles, card readers and pedestrian-crossing buttons. The rover’s RGB-D camera will locate the target in the rover’s reference frame. A wrist-mounted UWB tag will exchange ranging signals with four anchors distributed across the rover’s width, length and height, allowing the controller to estimate the wrist’s XYZ position.
+
+% The difference between the estimated hand and target positions will determine the required movement. The four motors will indicate left, right, up and down, with distinct pulse patterns for forward and backward movement. IMU-based orientation compensation will adjust the motor mapping as the wrist rotates. This mode will be explicitly activated to distinguish movement instructions from hazard alerts. Positioning accuracy, including the offset between the wrist and fingers, will require experimental validation.
+
+%=============short version==================
+%A potential extension would guide the user’s hand towards door handles, card readers or pedestrian-crossing buttons. The rover’s RGB-D camera would locate the target, while a wrist-mounted UWB tag and four anchors distributed across the rover’s width, length and height would estimate wrist XYZ in the same reference frame. The position difference would determine corrective cues: four motors for left, right, up and down, with distinct pulse patterns for forward and backward movement. IMU-based compensation would adjust the mapping as the wrist rotates. Explicit mode activation would distinguish guidance from hazard alerts. Positioning accuracy and the wrist-to-finger offset would require experimental validation.
+
+\paragraph{\textbf{Collaborative Mapping}}
+As the robots navigate their environments the maps they generate could be uploaded to a shared database and accessed by other robots. This would reduce the need to repeatedly map the same environments while also allowing newly detected changes to be shared across the fleet.
+
+\paragraph{\textbf{Proactive Hazard Awareness}}
+The LiDAR detects obstacles but not what they are. The vision language model could warn the user about hazards it would miss, such as a door opening into their path, a wet floor sign or a person holding a knife, passing them into the feedback hierarchy according to their urgency.
+
+
+\paragraph{\textbf{Microphone Mute Button}}
+Following testing of Whisper, a microphone mute button
+could be added to the guide handle to prevent unintended
+activation when background speech is recognised as the
+wake phrase ``Hey Pete''.
+% \paragraph{\textbf{Object Memory and Personal Objects}}
+% The robot could remember where a small set of personal items, such as house keys or a wallet, were last seen by storing their positions on the SLAM map. The user could then ask ``Hey Pete, where are my keys?'' even when they are out of view. Items would be enrolled by holding them up to the camera and saying ``Hey Pete, these are my keys'', so the user's own items can be told apart from similar ones. As an item may be moved without the robot seeing it, the robot would say when it was last seen, e.g.\ ``Your keys were on the table two hours ago''.
+
+\section{Conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
