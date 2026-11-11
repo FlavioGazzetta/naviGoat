@@ -20,7 +20,7 @@ Pete's perception is two ROS 2 nodes. The middle man (not part of perception) te
 
 ## How it works
 
-- **Object detection: YOLO-World** (`yolov8s-worldv2.pt`), open vocabulary, so it can look for any object name. It only runs in perception mode and only looks for the goal object. The position is the median depth over the middle of the object's box, turned into x and y with the camera's calibration (`camera_info`).
+- **Object detection: YOLO-World** (`yolov8s-worldv2.pt`), open vocabulary, so it can look for any object name. It only runs in perception mode and only reports the goal object, but it is always given a list of about 30 common objects as well: with only the goal word, anything similar (a cup when looking for a bottle) gets labelled as the goal. Synonyms and plurals are mapped to the list's words (sofa to couch, chairs to chair), and the goal must be seen in 3 frames in a row before it counts as found. The position is the median depth over the middle of the object's box, turned into x and y with the camera's calibration (`camera_info`).
 - **Scene description: Qwen3-VL 2B** (`qwen3-vl:2b-instruct`, about 1.9 GB), run locally through Ollama. It starts with the kind of place, then what matters for moving safely, and never says a road is safe to cross. The `-instruct` tag matters: the plain `qwen3-vl:2b` is a thinking model and spends all its tokens reasoning before it answers.
 - **Start-up order.** The launch file starts object detection only after Qwen has loaded. On the Jetson the GPU shares memory with everything else, and if YOLO loads first, Ollama puts most of Qwen on the much slower CPU.
 
@@ -69,6 +69,7 @@ To watch the camera from a laptop on the same network, with `camera:=true`, run 
 | `camera` | launch argument | `false` | `true` starts [the camera node](../../hardware/camera) for the Femto Bolt |
 | `search_timeout` | object_detection | `10.0` | seconds before `not_found`; also a launch argument |
 | `confidence` | object_detection | `0.25` | minimum YOLO confidence |
+| `confirm_frames` | object_detection | `3` | frames in a row the goal must be seen before `found`, so one-frame flukes are ignored |
 | `frame_id` | object_detection | `camera_link` | frame of `/object_mapping` |
 | `mode_name` | both | `perception` / `description` | the `/mode` value each node reacts to |
 | `image_topic`, `depth_topic`, `camera_info_topic`, `mode_topic`, `goal_topic`, ... | both | see the topics table | topic names |

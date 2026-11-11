@@ -18,6 +18,27 @@ from std_msgs.msg import String
 YOLO_MODEL = os.environ.get('PETE_YOLO_MODEL', 'yolov8s-worldv2.pt')
 CAMERA_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)  # newest frame only
 
+# YOLO-World always gets this whole list, not just the goal: with only the goal word, anything similar
+# (a cup when looking for a bottle) gets labelled as the goal. Only goal detections are used.
+VOCABULARY = ['person', 'chair', 'couch', 'bed', 'table', 'door', 'door handle', 'tv', 'remote', 'laptop', 'cell phone',
+              'bottle', 'can', 'cup', 'book', 'backpack', 'bag', 'keys', 'wallet', 'glasses', 'shoe', 'refrigerator', 'sink',
+              'toilet', 'stairs', 'dog', 'cat', 'traffic light', 'bin', 'plant', 'monitor', 'keyboard', 'mouse']
+ALIASES = {'sofa': 'couch', 'television': 'tv', 'remote control': 'remote', 'tv remote': 'remote', 'phone': 'cell phone',
+           'mobile phone': 'cell phone', 'fridge': 'refrigerator', 'desk': 'table', 'key': 'keys', 'steps': 'stairs',
+           'handle': 'door handle', 'door knob': 'door handle', 'doorknob': 'door handle', 'rucksack': 'backpack',
+           'crossing light': 'traffic light', 'pedestrian light': 'traffic light', 'trash can': 'bin', 'rubbish bin': 'bin',
+           'water bottle': 'bottle', 'mug': 'cup', 'screen': 'monitor', 'people': 'person', 'man': 'person',
+           'woman': 'person', 'child': 'person', 'human': 'person', 'seat': 'chair', 'doorway': 'door', 'television set': 'tv'}
+PLURAL = {'stairs', 'keys', 'glasses'}
+
+
+def normalise(name):
+    """The vocabulary's word for what was asked for: 'sofa' -> 'couch', 'chairs' -> 'chair'."""
+    name = ALIASES.get(name, name)
+    if name.endswith('s') and name not in PLURAL and name[:-1] in VOCABULARY:
+        name = name[:-1]
+    return name
+
 
 def depth_at(box, depth):
     """Median depth (m) over the middle half of the box, ignoring holes. None if there is too little."""
@@ -36,9 +57,13 @@ class ObjectDetection(Node):
         self.timeout = param('search_timeout', 10.0)
         self.confidence = param('confidence', 0.25)
         self.frame_id = param('frame_id', 'camera_link')
+        self.confirm_frames = param('confirm_frames', 3)  # frames in a row before 'found', so one-frame flukes are ignored
 
         from ultralytics import YOLOWorld
         self.model = YOLOWorld(param('model_path', YOLO_MODEL))
+        self.vocabulary = list(VOCABULARY)
+        self.model.set_classes(self.vocabulary)
+        self.hits = 0
         self.bridge = CvBridge()
         self.mode = ''
         self.goal = ''
@@ -69,16 +94,20 @@ class ObjectDetection(Node):
             self.started = None
 
     def on_goal(self, msg):
-        self.goal = msg.data.strip().lower()
+        self.goal = normalise(msg.data.strip().lower())
         if self.goal:
-            self.model.set_classes([self.goal])
+            # Any other word still works. Words inside it are left out, or 'chair' would win every 'armchair' box.
+            wanted = VOCABULARY if self.goal in VOCABULARY else [w for w in VOCABULARY if w not in self.goal] + [self.goal]
+            if wanted != self.vocabulary:
+                self.vocabulary = list(wanted)
+                self.model.set_classes(self.vocabulary)
         if self.mode == self.mode_name:
             self.start_search()  # also when the same goal is sent again
 
     def start_search(self):
         if not self.goal:
             return
-        self.started, self.found = time.monotonic(), False
+        self.started, self.found, self.hits = time.monotonic(), False, 0
         self.get_logger().info(f'Looking for a {self.goal}.')
 
     def on_info(self, msg):
@@ -94,7 +123,8 @@ class ObjectDetection(Node):
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
         point, boxes, chosen = self.locate(frame)
         self.publish_preview(frame, boxes, chosen, point)
-        if point is not None:
+        self.hits = self.hits + 1 if point is not None else 0
+        if point is not None and (self.found or self.hits >= self.confirm_frames):
             point.header.stamp = msg.header.stamp
             self.point_pub.publish(point)
             if not self.found:
@@ -114,8 +144,10 @@ class ObjectDetection(Node):
         if self.depth.shape[:2] != frame.shape[:2]:
             self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
             return None, [], None
-        result = self.model.predict(frame, conf=self.confidence, verbose=False)[0].boxes
-        boxes = sorted(zip(result.xyxy.tolist(), result.conf.tolist()), key=lambda b: -b[1])
+        result = self.model.predict(frame, conf=self.confidence, verbose=False)[0]
+        goal = self.vocabulary.index(self.goal)
+        boxes = sorted(((b, p) for b, p, c in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
+                        if int(c) == goal), key=lambda b: -b[1])  # the goal only; other words just compete
         for box, _ in boxes:
             z = depth_at(box, self.depth)
             if z is None:
