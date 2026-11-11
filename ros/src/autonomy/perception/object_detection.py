@@ -5,13 +5,14 @@ or 'not_found:<object>' on /object_status after search_timeout seconds."""
 import os
 import time
 
+import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 from std_msgs.msg import String
 
 YOLO_MODEL = os.environ.get('PETE_YOLO_MODEL', 'yolov8s-worldv2.pt')
@@ -48,6 +49,8 @@ class ObjectDetection(Node):
 
         self.point_pub = self.create_publisher(PointStamped, param('object_mapping_topic', '/object_mapping'), 10)
         self.status_pub = self.create_publisher(String, param('status_topic', '/object_status'), 10)
+        # What YOLO sees, with its boxes drawn on: a small jpeg, only while searching
+        self.preview_pub = self.create_publisher(CompressedImage, param('preview_topic', '/object_detection/image/compressed'), CAMERA_QOS)
         self.create_subscription(String, param('mode_topic', '/mode'), self.on_mode, 10)
         self.create_subscription(String, param('goal_topic', '/goal'), self.on_goal, 10)
         self.create_subscription(Image, param('image_topic', '/camera/color/image_raw'), self.on_image, CAMERA_QOS)
@@ -89,7 +92,8 @@ class ObjectDetection(Node):
         if self.started is None:
             return  # YOLO stays idle
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-        point = self.locate(frame)
+        point, boxes, chosen = self.locate(frame)
+        self.publish_preview(frame, boxes, chosen, point)
         if point is not None:
             point.header.stamp = msg.header.stamp
             self.point_pub.publish(point)
@@ -103,15 +107,16 @@ class ObjectDetection(Node):
             self.started = None
 
     def locate(self, frame):
-        """PointStamped of the most confident detection that has a depth reading, or None."""
+        """(PointStamped of the most confident detection that has a depth reading or None, all boxes as (xyxy, conf), the chosen box)."""
         if self.depth is None or self.intrinsics is None:
             self.get_logger().warn('Waiting for the depth image and camera info.', throttle_duration_sec=5.0)
-            return None
+            return None, [], None
         if self.depth.shape[:2] != frame.shape[:2]:
             self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
-            return None
-        boxes = self.model.predict(frame, conf=self.confidence, verbose=False)[0].boxes
-        for box, _ in sorted(zip(boxes.xyxy.tolist(), boxes.conf.tolist()), key=lambda b: -b[1]):
+            return None, [], None
+        result = self.model.predict(frame, conf=self.confidence, verbose=False)[0].boxes
+        boxes = sorted(zip(result.xyxy.tolist(), result.conf.tolist()), key=lambda b: -b[1])
+        for box, _ in boxes:
             z = depth_at(box, self.depth)
             if z is None:
                 continue
@@ -120,8 +125,22 @@ class ObjectDetection(Node):
             point = PointStamped()
             point.header.frame_id = self.frame_id
             point.point.x, point.point.y, point.point.z = z, -(u - cx) * z / fx, -(v - cy) * z / fy  # optical frame to x forward, y left, z up
-            return point
-        return None
+            return point, boxes, box
+        return None, boxes, None
+
+    def publish_preview(self, frame, boxes, chosen, point):
+        """Green box: the detection sent to navigation. Grey: other detections (no depth reading, or less confident)."""
+        scale = 640 / frame.shape[1]
+        image = cv2.resize(frame, (640, int(frame.shape[0] * scale)))
+        for box, conf in boxes:
+            x1, y1, x2, y2 = (int(c * scale) for c in box)
+            is_chosen = box is chosen
+            label = f'{self.goal} {point.point.x:.1f} m' if is_chosen else f'{self.goal} {conf:.2f}'
+            colour = (0, 200, 0) if is_chosen else (160, 160, 160)
+            cv2.rectangle(image, (x1, y1), (x2, y2), colour, 2)
+            cv2.putText(image, label, (x1, max(y1 - 6, 14)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 2)
+        cv2.putText(image, f'YOLO: looking for {self.goal}', (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 255), 2)
+        self.preview_pub.publish(CompressedImage(format='jpeg', data=cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 60])[1].tobytes()))
 
 
 def main():
