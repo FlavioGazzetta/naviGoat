@@ -47,4 +47,14 @@ docker ps
 docker exec -it <CONTAINER_NAME> bash
 ```
 
+### Build and run bringup
+
+Inside the container, from `/workspace`:
+
+```bash
+colcon build --base-paths ros/src --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install
+source install/setup.bash
+ros2 launch bringup launch.py
+```
+
 ## [Simulation](ros/src/simulation/README.md)

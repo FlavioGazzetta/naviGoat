@@ -18,5 +18,5 @@ Inside the container, from `/workspace`:
 ```bash
 colcon build --packages-select handle_nodes --symlink-install
 source install/setup.bash
-ros2 run handle_nodes serial_bridge
+ros2 launch handle_nodes handle_launch.py
 ```
