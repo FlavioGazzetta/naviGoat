@@ -69,6 +69,7 @@ To watch the camera from a laptop on the same network, with `camera:=true`, run 
 | `camera` | launch argument | `false` | `true` starts [the camera node](../../hardware/camera) for the Femto Bolt |
 | `search_timeout` | object_detection | `10.0` | seconds before `not_found`; also a launch argument |
 | `confidence` | object_detection | `0.25` | minimum YOLO confidence |
+| `image_size` | object_detection | `1280` | width YOLO looks at. 640 (YOLO's default) halves the camera frame and misses objects a few meters away. On the Jetson 640 takes about 37 ms a frame, 960 about 49 ms, 1280 about 69 ms |
 | `confirm_frames` | object_detection | `3` | frames in a row the goal must be seen before `found`, so one-frame flukes are ignored |
 | `track_gate` | object_detection | `0.5` | meters: it follows the closest goal object, and each frame only accepts a detection this near to where it was, so it doesn't jump between two chairs |
 | `lost_after` | object_detection | `1.0` | seconds without seeing the followed object before it picks the closest one again |

@@ -56,6 +56,9 @@ class ObjectDetection(Node):
         self.mode_name = param('mode_name', 'perception')
         self.timeout = param('search_timeout', 10.0)
         self.confidence = param('confidence', 0.25)
+        # YOLO's input width. Its default, 640, halves our 1280 px frames and loses objects a few meters away.
+        # On the Jetson: 640 ~37 ms, 960 ~49 ms, 1280 ~69 ms per frame.
+        self.image_size = param('image_size', 1280)
         self.frame_id = param('frame_id', 'camera_link')
         self.confirm_frames = param('confirm_frames', 3)  # frames in a row before 'found', so one-frame flukes are ignored
         # Once a goal object is picked (the closest), stick to it: each frame take the detection nearest to where it was,
@@ -150,7 +153,7 @@ class ObjectDetection(Node):
         if self.depth.shape[:2] != frame.shape[:2]:
             self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
             return None, [], None
-        result = self.model.predict(frame, conf=self.confidence, verbose=False)[0]
+        result = self.model.predict(frame, imgsz=self.image_size, conf=self.confidence, verbose=False)[0]
         goal = self.vocabulary.index(self.goal)
         boxes = sorted(((b, p) for b, p, c in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
                         if int(c) == goal), key=lambda b: -b[1])  # the goal only; other words just compete
