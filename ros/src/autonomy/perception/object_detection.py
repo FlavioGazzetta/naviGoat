@@ -58,6 +58,12 @@ class ObjectDetection(Node):
         self.confidence = param('confidence', 0.25)
         self.frame_id = param('frame_id', 'camera_link')
         self.confirm_frames = param('confirm_frames', 3)  # frames in a row before 'found', so one-frame flukes are ignored
+        # Once a goal object is picked (the closest), stick to it: each frame take the detection nearest to where it was,
+        # within track_gate meters, so it doesn't jump between two chairs. Lost for lost_after seconds: pick again.
+        self.track_gate = param('track_gate', 0.5)
+        self.lost_after = param('lost_after', 1.0)
+        self.target = None  # (x, y, z) of the object being followed
+        self.target_seen = 0.0
 
         from ultralytics import YOLOWorld
         self.model = YOLOWorld(param('model_path', YOLO_MODEL))
@@ -107,7 +113,7 @@ class ObjectDetection(Node):
     def start_search(self):
         if not self.goal:
             return
-        self.started, self.found, self.hits = time.monotonic(), False, 0
+        self.started, self.found, self.hits, self.target = time.monotonic(), False, 0, None
         self.get_logger().info(f'Looking for a {self.goal}.')
 
     def on_info(self, msg):
@@ -137,7 +143,7 @@ class ObjectDetection(Node):
             self.started = None
 
     def locate(self, frame):
-        """(PointStamped of the most confident detection that has a depth reading or None, all boxes as (xyxy, conf), the chosen box)."""
+        """(PointStamped of the followed object or None, all goal boxes as (xyxy, conf), the chosen box)."""
         if self.depth is None or self.intrinsics is None:
             self.get_logger().warn('Waiting for the depth image and camera info.', throttle_duration_sec=5.0)
             return None, [], None
@@ -148,17 +154,31 @@ class ObjectDetection(Node):
         goal = self.vocabulary.index(self.goal)
         boxes = sorted(((b, p) for b, p, c in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
                         if int(c) == goal), key=lambda b: -b[1])  # the goal only; other words just compete
+        candidates = []  # (position, box) of every goal detection with a depth reading
+        fx, fy, cx, cy = self.intrinsics
         for box, _ in boxes:
             z = depth_at(box, self.depth)
-            if z is None:
-                continue
-            fx, fy, cx, cy = self.intrinsics
-            u, v = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
-            point = PointStamped()
-            point.header.frame_id = self.frame_id
-            point.point.x, point.point.y, point.point.z = z, -(u - cx) * z / fx, -(v - cy) * z / fy  # optical frame to x forward, y left, z up
-            return point, boxes, box
-        return None, boxes, None
+            if z is not None:
+                u, v = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+                candidates.append((np.array([z, -(u - cx) * z / fx, -(v - cy) * z / fy]), box))  # optical frame to x forward, y left, z up
+
+        now = time.monotonic()
+        if self.target is not None and now - self.target_seen > self.lost_after:
+            self.target = None  # lost it: pick again
+        if self.target is None:
+            pick = min(candidates, key=lambda c: np.linalg.norm(c[0]), default=None)  # the closest one
+        else:
+            pick = min(candidates, key=lambda c: np.linalg.norm(c[0] - self.target), default=None)  # the same one as before
+            if pick is not None and np.linalg.norm(pick[0] - self.target) > self.track_gate:
+                pick = None  # only other objects in view: don't swap to them
+        if pick is None:
+            return None, boxes, None
+
+        self.target, self.target_seen = pick[0], now
+        point = PointStamped()
+        point.header.frame_id = self.frame_id
+        point.point.x, point.point.y, point.point.z = (float(c) for c in pick[0])
+        return point, boxes, pick[1]
 
     def publish_preview(self, frame, boxes, chosen, point):
         """Green box: the detection sent to navigation. Grey: other detections (no depth reading, or less confident)."""

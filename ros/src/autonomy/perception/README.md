@@ -70,6 +70,8 @@ To watch the camera from a laptop on the same network, with `camera:=true`, run 
 | `search_timeout` | object_detection | `10.0` | seconds before `not_found`; also a launch argument |
 | `confidence` | object_detection | `0.25` | minimum YOLO confidence |
 | `confirm_frames` | object_detection | `3` | frames in a row the goal must be seen before `found`, so one-frame flukes are ignored |
+| `track_gate` | object_detection | `0.5` | meters: it follows the closest goal object, and each frame only accepts a detection this near to where it was, so it doesn't jump between two chairs |
+| `lost_after` | object_detection | `1.0` | seconds without seeing the followed object before it picks the closest one again |
 | `frame_id` | object_detection | `camera_link` | frame of `/object_mapping` |
 | `mode_name` | both | `perception` / `description` | the `/mode` value each node reacts to |
 | `image_topic`, `depth_topic`, `camera_info_topic`, `mode_topic`, `goal_topic`, ... | both | see the topics table | topic names |
