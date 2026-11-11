@@ -51,7 +51,7 @@ class ObjectDetection(Node):
         self.create_subscription(String, param('mode_topic', '/mode'), self.on_mode, 10)
         self.create_subscription(String, param('goal_topic', '/goal'), self.on_goal, 10)
         self.create_subscription(Image, param('image_topic', '/camera/color/image_raw'), self.on_image, CAMERA_QOS)
-        self.create_subscription(Image, param('depth_topic', '/camera/depth/image_raw'), self.on_depth, CAMERA_QOS)
+        self.create_subscription(Image, param('depth_topic', '/camera/depth_registered/image_rect'), self.on_depth, CAMERA_QOS)
         self.create_subscription(CameraInfo, param('camera_info_topic', '/camera/color/camera_info'), self.on_info, CAMERA_QOS)
         self.get_logger().info(f"Object detection ready. It searches while the mode is '{self.mode_name}'.")
 

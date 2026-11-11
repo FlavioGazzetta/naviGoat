@@ -16,7 +16,7 @@ Pete's perception is two ROS 2 nodes. The middle man (not part of perception) te
 | `/object_mapping` | `geometry_msgs/PointStamped` | out | the object's position in meters from the camera (x forward, y left, z up, frame `camera_link`), sent every frame it is seen |
 | `/object_status` | `std_msgs/String` | out | `found:<object>` once it is found, or `not_found:<object>` if it is not seen within `search_timeout` seconds |
 | `/scene_description` | `std_msgs/String` | out | one or two spoken sentences, e.g. "You are in an office. Ahead are desks and chairs." |
-| `/camera/color/image_raw`, `/camera/depth/image_raw`, `/camera/color/camera_info` | `sensor_msgs` | in | from the Orbbec camera driver; the depth image must be aligned to the colour image |
+| `/camera/color/image_raw`, `/camera/depth_registered/image_rect`, `/camera/color/camera_info` | `sensor_msgs` | in | from [the camera node](../../hardware/camera) or the Orbbec camera driver; depth aligned to colour, as Enid's people tracker also expects |
 
 ## How it works
 
@@ -43,6 +43,8 @@ docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus a
 
 The camera is run by the Orbbec ROS 2 driver with depth aligned to colour, e.g. `ros2 launch orbbec_camera femto_bolt.launch.py depth_registration:=true`. It can run in another container on the same machine: with `--network=host` the topics are shared.
 
+Without the driver, [the camera node](../../hardware/camera) publishes the same topics from the Femto Bolt using the Orbbec SDK in our image: add `camera:=true` to the launch command, and start the container with `--privileged -v /dev:/dev` so it can reach the USB camera. Run only one of the two.
+
 ## Run
 
 ```bash
@@ -60,8 +62,11 @@ ros2 topic pub --once /mode std_msgs/msg/String "{data: description}"
 ros2 topic echo /scene_description
 ```
 
+To watch the camera from a laptop on the same network, with `camera:=true`, run `python3 ros/src/hardware/camera/view_camera.py` there (see [hardware/camera](../../hardware/camera)).
+
 | Parameter | Node | Default | |
 | --- | --- | --- | --- |
+| `camera` | launch argument | `false` | `true` starts [the camera node](../../hardware/camera) for the Femto Bolt |
 | `search_timeout` | object_detection | `10.0` | seconds before `not_found`; also a launch argument |
 | `confidence` | object_detection | `0.25` | minimum YOLO confidence |
 | `frame_id` | object_detection | `camera_link` | frame of `/object_mapping` |
