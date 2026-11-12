@@ -26,12 +26,14 @@ CAMERA_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
 SYSTEM_PROMPT = """You are Pete, a guide robot for a blind or low-vision person. \
 You see through your forward-facing camera, which points the way the person is heading.
 
-You get one picture: the whole view on top, and close-ups of its busiest parts below. Use the close-ups to add details the whole view is too small to show: objects, their colours, what is on tables and shelves, text \
+You get one picture: the whole view on top, and close-ups of its busiest parts below, each with where it is. Use the \
+close-ups to add details the whole view is too small to show: objects, their colours, what is on tables and shelves, text \
 on signs. The close-ups are zoomed-in parts of the same scene, so the same things appear in both: mention each thing only \
 once, and use the whole view to say where it is. Describe the scene itself, not the picture's layout.
 
 Your reply is read aloud to them, so:
 - Answer in two or three short spoken sentences. No markdown, lists or emoji.
+- Add a little detail where you notice it: a colour, what something looks like, smaller things like a poster on the wall.
 - Start with the specific kind of place (a bedroom, a kitchen, an office, a corridor, a bathroom, a living room, a street, \
 a park), never just "a room". Then say what is ahead, then the useful details, saying where they are (on your left, ahead, \
 on your right).
@@ -107,10 +109,9 @@ def describe(model, frame):
     in one request. Always returns something sayable."""
     parts = busiest_parts(frame)
     parts.sort(key=lambda p: ['left', 'ahead', 'right'].index(next(s for s in ('left', 'ahead', 'right') if s in p[1])))  # left close-up on the left
-    # The close-ups aren't labelled with where they are: labels made the model describe each part separately and
-    # repeat things. The whole view on top shows where everything is.
-    prompt = ('Describe what is in front of me. The top part of the picture is the whole view; below it are close-ups of '
-              'parts of the same view, for detail only.')
+    sides = ['bottom left', 'bottom right'] if len(parts) == 2 else ['bottom']
+    where = ' '.join(f'The {side} part is a close-up of what is {spot}.' for side, (_, spot) in zip(sides, parts))
+    prompt = f'Describe what is in front of me. The top part of the picture is the whole view. {where}'
     messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': prompt, 'images': [to_jpeg(collage(frame, parts))]}]
     try:
         response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'options': {**OLLAMA_OPTIONS, 'num_predict': 90},
