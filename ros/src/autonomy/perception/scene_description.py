@@ -25,9 +25,14 @@ CAMERA_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
 SYSTEM_PROMPT = """You are Pete, a guide robot for a blind or low-vision person. \
 You see through your forward-facing camera, which points the way the person is heading.
 
+You get the whole view first, then close-ups of its busiest parts, each with where it is. Use the close-ups to add \
+details the whole view is too small to show: objects, their colours, what is on tables and shelves, text on signs.
+
 Your reply is read aloud to them, so:
-- Answer in one or two short spoken sentences. No markdown, lists or emoji.
-- Start with the kind of place (an office, a kitchen, a corridor, a street, a park), then what is ahead.
+- Answer in two or three short spoken sentences. No markdown, lists or emoji.
+- Start with the specific kind of place (a bedroom, a kitchen, an office, a corridor, a bathroom, a living room, a street, \
+a park), never just "a room". Then say what is ahead, then the useful details, saying where they are (on your left, ahead, \
+on your right).
 - Mention what matters for moving safely: people, obstacles, steps, doors, signs and the colour of crossing lights.
 - Do not give distances, and do not guess how many people there are. Only mention people you can clearly see.
 - Never say it is safe to cross a road. Whether to cross is the person's decision.
@@ -54,19 +59,47 @@ def load_vlm(model):
     return False
 
 
+def to_jpeg(image):
+    return base64.standard_b64encode(cv2.imencode('.jpg', image)[1].tobytes()).decode()
+
+
+def busiest_parts(frame, count=2):
+    """The count most interesting parts of a 3x2 grid over the frame, as (crop, where), busiest first.
+    Interesting = many edges and varied colour; bare walls, floor and ceiling score low. Crops come from the full-size
+    frame with a margin, so they show more detail than the shrunk whole view."""
+    h, w = frame.shape[:2]
+    edges = cv2.Canny(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 80, 160)
+    lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+    parts = []
+    for row in range(2):
+        for col in range(3):
+            y1, y2, x1, x2 = row * h // 2, (row + 1) * h // 2, col * w // 3, (col + 1) * w // 3
+            score = edges[y1:y2, x1:x2].mean() / 255 + lab[y1:y2, x1:x2, 1:].std() / 64  # edges + colour variety
+            my, mx = (y2 - y1) // 6, (x2 - x1) // 6
+            crop = frame[max(0, y1 - my):min(h, y2 + my), max(0, x1 - mx):min(w, x2 + mx)]
+            where = ['on your left', 'straight ahead', 'on your right'][col] + (', higher up' if row == 0 else ', lower down')
+            parts.append((score, crop, where))
+    parts.sort(key=lambda p: -p[0])
+    return [(crop, where) for _, crop, where in parts[:count]]
+
+
 def describe(model, frame):
-    """A short spoken description of the image. Always returns something sayable."""
-    if frame.shape[1] > 640:  # fewer image tokens, much faster on a Jetson
-        frame = cv2.resize(frame, (640, int(frame.shape[0] * 640 / frame.shape[1])))
-    jpeg = base64.standard_b64encode(cv2.imencode('.jpg', frame)[1].tobytes()).decode()
-    messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': 'Describe what is in front of me.', 'images': [jpeg]}]
+    """A spoken description of the image, from the whole view plus close-ups of its busiest parts, in one request
+    (one request with three images is much quicker on the Jetson than three requests). Always returns something sayable."""
+    whole = cv2.resize(frame, (640, int(frame.shape[0] * 640 / frame.shape[1]))) if frame.shape[1] > 640 else frame
+    parts = busiest_parts(frame)
+    images = [to_jpeg(whole)] + [to_jpeg(crop) for crop, _ in parts]
+    where = ' '.join(f'Close-up {i + 1} is {spot}.' for i, (_, spot) in enumerate(parts))
+    prompt = f'Describe what is in front of me. The first picture is the whole view. {where}'
+    messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': prompt, 'images': images}]
     try:
-        response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'options': {**OLLAMA_OPTIONS, 'num_predict': 80}, 'messages': messages})
+        response = ollama_chat({'model': model, 'stream': False, 'keep_alive': -1, 'options': {**OLLAMA_OPTIONS, 'num_predict': 130},
+                                'messages': messages}, timeout=90)
     except (urllib.error.URLError, TimeoutError):
         return 'I cannot reach the vision model.'
     answer = response.get('message', {}).get('content', '').replace('*', '').replace('#', '').strip()
-    sentences = re.split(r'(?<=[.!?])\s+', answer)  # keep two sentences
-    return ' '.join(sentences[:2]) or 'Sorry, I could not describe the scene.'
+    sentences = re.split(r'(?<=[.!?])\s+', answer)  # keep three sentences
+    return ' '.join(sentences[:3]) or 'Sorry, I could not describe the scene.'
 
 
 class SceneDescription(Node):
