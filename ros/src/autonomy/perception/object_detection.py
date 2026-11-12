@@ -5,6 +5,7 @@ or 'not_found:<object>' on /object_status after search_timeout seconds."""
 import math
 import os
 import random
+import threading
 import time
 
 import cv2
@@ -22,33 +23,72 @@ CAMERA_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)  # n
 
 # YOLO-World always gets this whole list, not just the goal: with only the goal word, anything similar
 # (a cup when looking for a bottle) gets labelled as the goal. Only goal detections are used.
-VOCABULARY = ['person', 'chair', 'couch', 'bed', 'table', 'door', 'door handle', 'tv', 'remote', 'laptop', 'cell phone',
-              'bottle', 'can', 'cup', 'book', 'backpack', 'bag', 'keys', 'wallet', 'glasses', 'shoe', 'refrigerator', 'sink',
-              'toilet', 'stairs', 'dog', 'cat', 'traffic light', 'bin', 'plant', 'monitor', 'keyboard', 'mouse']
-ALIASES = {'sofa': 'couch', 'television': 'tv', 'remote control': 'remote', 'tv remote': 'remote', 'phone': 'cell phone',
-           'mobile phone': 'cell phone', 'fridge': 'refrigerator', 'desk': 'table', 'key': 'keys', 'steps': 'stairs',
-           'handle': 'door handle', 'door knob': 'door handle', 'doorknob': 'door handle', 'rucksack': 'backpack',
-           'crossing light': 'traffic light', 'pedestrian light': 'traffic light', 'trash can': 'bin', 'rubbish bin': 'bin',
-           'water bottle': 'bottle', 'mug': 'cup', 'screen': 'monitor', 'people': 'person', 'man': 'person',
-           'woman': 'person', 'child': 'person', 'human': 'person', 'seat': 'chair', 'doorway': 'door', 'television set': 'tv'}
-PLURAL = {'stairs', 'keys', 'glasses'}
+# The words are turned into YOLO's form once, at launch, so a long list costs almost nothing per frame (about 6% for 100
+# words). Each word must be a clearly different object: near-synonyms (cup and mug) split one object's boxes between
+# them, so synonyms go in ALIASES instead. Most words are YOLO's training classes (COCO), which it knows best.
+VOCABULARY = [
+    # people and animals
+    'person', 'dog', 'cat', 'bird', 'horse',
+    # furniture and the building
+    'chair', 'couch', 'bed', 'table', 'bench', 'door', 'door handle', 'window', 'stairs', 'elevator', 'light switch',
+    'toilet', 'sink', 'bathtub', 'shower', 'mirror', 'lamp', 'clock', 'shelf', 'cupboard', 'bin', 'plant', 'vase',
+    # electronics
+    'tv', 'laptop', 'keyboard', 'mouse', 'remote', 'cell phone', 'headphones', 'charger', 'printer', 'speaker',
+    # kitchen
+    'refrigerator', 'microwave', 'oven', 'toaster', 'kettle', 'bottle', 'can', 'cup', 'bowl', 'plate', 'fork',
+    'knife', 'spoon',
+    # food
+    'banana', 'apple', 'orange', 'sandwich', 'pizza', 'cake',
+    # personal things
+    'backpack', 'handbag', 'suitcase', 'umbrella', 'keys', 'wallet', 'glasses', 'hat', 'jacket', 'shoe', 'book',
+    'pen', 'scissors', 'toothbrush', 'towel', 'pillow', 'box', 'teddy bear', 'hair drier',
+    # sport and play
+    'sports ball', 'frisbee', 'tennis racket', 'skateboard',
+    # street
+    'traffic light', 'stop sign', 'fire hydrant', 'car', 'bus', 'truck', 'bicycle', 'motorcycle']
+ALIASES = {
+    'people': 'person', 'man': 'person', 'woman': 'person', 'child': 'person', 'human': 'person', 'puppy': 'dog',
+    'kitten': 'cat',
+    'seat': 'chair', 'armchair': 'chair', 'stool': 'chair', 'sofa': 'couch', 'settee': 'couch', 'desk': 'table',
+    'dining table': 'table', 'doorway': 'door', 'handle': 'door handle', 'door knob': 'door handle',
+    'doorknob': 'door handle', 'steps': 'stairs', 'staircase': 'stairs', 'lift': 'elevator', 'switch': 'light switch',
+    'loo': 'toilet', 'bath': 'bathtub', 'washbasin': 'sink', 'basin': 'sink', 'light': 'lamp', 'bookshelf': 'shelf',
+    'cabinet': 'cupboard', 'wardrobe': 'cupboard', 'trash can': 'bin', 'rubbish bin': 'bin',
+    'potted plant': 'plant', 'flower pot': 'plant', 'flowers': 'vase',
+    'television': 'tv', 'television set': 'tv', 'monitor': 'tv', 'screen': 'tv', 'computer screen': 'tv',
+    'computer': 'laptop', 'remote control': 'remote', 'tv remote': 'remote', 'phone': 'cell phone',
+    'mobile phone': 'cell phone', 'mobile': 'cell phone', 'smartphone': 'cell phone', 'earphones': 'headphones',
+    'headset': 'headphones', 'cable': 'charger',
+    'fridge': 'refrigerator', 'water bottle': 'bottle', 'mug': 'cup', 'glass': 'cup',
+    'wine glass': 'cup', 'dish': 'plate',
+    'rucksack': 'backpack', 'bag': 'handbag', 'purse': 'handbag', 'luggage': 'suitcase', 'key': 'keys',
+    'sunglasses': 'glasses', 'spectacles': 'glasses', 'cap': 'hat', 'coat': 'jacket', 'shoes': 'shoe', 'trainers': 'shoe',
+    'pencil': 'pen', 'cushion': 'pillow', 'package': 'box', 'parcel': 'box', 'hair dryer': 'hair drier',
+    'ball': 'sports ball', 'football': 'sports ball', 'soccer ball': 'sports ball', 'basketball': 'sports ball',
+    'tennis ball': 'sports ball', 'rugby ball': 'sports ball',
+    'crossing light': 'traffic light', 'pedestrian light': 'traffic light', 'bike': 'bicycle', 'motorbike': 'motorcycle',
+    'van': 'truck', 'lorry': 'truck'}
+PLURAL = {'stairs', 'keys', 'glasses', 'headphones', 'scissors'}
 
 
 def normalise(name):
     """The vocabulary's word for what was asked for: 'sofa' -> 'couch', 'chairs' -> 'chair'."""
     name = ALIASES.get(name, name)
-    if name.endswith('s') and name not in PLURAL and name[:-1] in VOCABULARY:
-        name = name[:-1]
+    if name not in PLURAL and name not in VOCABULARY:
+        for ending in ('es', 's'):  # 'buses' -> 'bus', 'chairs' -> 'chair'
+            if name.endswith(ending) and ALIASES.get(name[:-len(ending)], name[:-len(ending)]) in VOCABULARY:
+                return ALIASES.get(name[:-len(ending)], name[:-len(ending)])
     return name
 
 
-def depth_at(box, depth):
-    """Median depth (m) over the middle half of the box, ignoring holes. None if there is too little."""
+def depth_at(box, depth, scale):
+    """Median depth (m) over the middle half of the box, ignoring holes. None if there is too little.
+    Only this patch of the depth image is read; scale turns its values into meters."""
     x1, y1, x2, y2 = box
     w, h = x2 - x1, y2 - y1
     patch = depth[int(y1 + h / 4):int(y2 - h / 4) + 1, int(x1 + w / 4):int(x2 - w / 4) + 1]
     valid = patch[patch > 0]
-    return float(np.median(valid)) if valid.size > 20 else None
+    return float(np.median(valid)) * scale if valid.size > 20 else None
 
 
 class ObjectDetection(Node):
@@ -77,6 +117,15 @@ class ObjectDetection(Node):
         self.model = YOLOWorld(param('model_path', YOLO_MODEL))
         self.vocabulary = list(VOCABULARY)
         self.model.set_classes(self.vocabulary)
+        # YOLO-World compares image regions with each word turned into numbers by a text model (CLIP). Keep the list's
+        # numbers from launch: going back to them is instant, and a new word only needs its own numbers worked out.
+        self.list_features = self.model.model.txt_feats.clone()
+        self.wanted = list(VOCABULARY)  # the list the goal needs; differs from vocabulary while a new word is learnt
+        self.learning = False
+        # Warm up: the first prediction sets up the GPU code (seconds on the Jetson). Do it now, not on the first search.
+        # Once for a whole frame and once for a quarter, as each shape gets its own setup.
+        for h, w in ((720, 1280), (396, 704)):
+            self.model.predict(np.zeros((h, w, 3), np.uint8), imgsz=self.image_size, verbose=False)
         self.hits = 0  # sightings of the followed object
         self.look = 0  # counts YOLO looks: even = whole frame, odd = the next quarter
         self.bridge = CvBridge()
@@ -84,7 +133,7 @@ class ObjectDetection(Node):
         self.goal = ''
         self.started = None  # None when not searching
         self.found = False
-        self.depth = None
+        self.depth_msg = None  # the newest depth image, only read once YOLO has a goal box
         self.intrinsics = None  # fx, fy, cx, cy
 
         self.point_pub = self.create_publisher(PointStamped, param('object_mapping_topic', '/object_mapping'), 10)
@@ -112,29 +161,59 @@ class ObjectDetection(Node):
         self.goal = normalise(msg.data.strip().lower())
         if self.goal:
             # Any other word still works. Words inside it are left out, or 'chair' would win every 'armchair' box.
-            wanted = VOCABULARY if self.goal in VOCABULARY else [w for w in VOCABULARY if w not in self.goal] + [self.goal]
-            if wanted != self.vocabulary:
-                self.vocabulary = list(wanted)
-                self.model.set_classes(self.vocabulary)
+            self.wanted = VOCABULARY if self.goal in VOCABULARY else [w for w in VOCABULARY if w not in self.goal] + [self.goal]
+            if self.goal in VOCABULARY and not self.learning:
+                self.use_words(VOCABULARY)  # instant: the list's numbers are kept from launch
+            elif self.wanted != self.vocabulary and not self.learning:
+                self.learning = True
+                threading.Thread(target=self.learn, daemon=True).start()
         if self.mode == self.mode_name:
             self.start_search()  # also when the same goal is sent again
+
+    def learn(self):
+        """Work out a new word's numbers. Loading the text model takes seconds on the Jetson, so this runs in the
+        background and the node keeps answering; the search waits for it and its timeout starts once it's done."""
+        while self.wanted != self.vocabulary:  # again if another goal came in meanwhile
+            wanted = list(self.wanted)
+            if wanted[-1] not in VOCABULARY:
+                self.get_logger().info(f"'{wanted[-1]}' isn't in the word list; adding it.")
+            self.use_words(wanted)
+        self.learning = False
+        if self.mode == self.mode_name:
+            self.start_search()
+
+    def use_words(self, words):
+        """Point YOLO at a word list: list words reuse their numbers from launch, any other word is worked out now."""
+        if words == self.vocabulary:
+            return
+        import torch
+        parts = [self.list_features[:, [VOCABULARY.index(w) for w in words if w in VOCABULARY]]]
+        new = [w for w in words if w not in VOCABULARY]
+        if new:
+            parts.append(self.model.model.get_text_pe(new).to(self.list_features))
+        world = self.model.model
+        world.txt_feats = torch.cat(parts, dim=1)
+        world.model[-1].nc = len(words)
+        self.model.model.names = list(words)
+        self.model.predictor = None  # rebuilt on the next prediction, with the new number of words
+        self.vocabulary = list(words)
 
     def start_search(self):
         if not self.goal:
             return
         self.started, self.found, self.hits, self.target, self.look = time.monotonic(), False, 0, None, 0
-        self.get_logger().info(f'Looking for a {self.goal}.')
+        if not self.learning:
+            self.get_logger().info(f'Looking for a {self.goal}.')
 
     def on_info(self, msg):
         self.intrinsics = (msg.k[0], msg.k[4], msg.k[2], msg.k[5])
 
     def on_depth(self, msg):
-        depth = self.bridge.imgmsg_to_cv2(msg, 'passthrough')
-        self.depth = depth / 1000.0 if msg.encoding == '16UC1' else depth  # 16UC1 is mm, 32FC1 m
+        self.depth_msg = msg  # kept as it is: read only once YOLO has a box, and then only inside it
 
     def on_image(self, msg):
-        if self.started is None:
-            return  # YOLO stays idle
+        if self.started is None or self.learning:
+            return  # YOLO stays idle, or the word list is being changed
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
         point, boxes, chosen, region = self.locate(frame)
         self.publish_preview(frame, boxes, chosen, point, region)
@@ -167,13 +246,8 @@ class ObjectDetection(Node):
         return int(x1), int(y1), int(x2), int(y2)
 
     def locate(self, frame):
-        """(PointStamped of the followed object or None, goal boxes as (xyxy, conf), the chosen box, the region looked at)."""
-        if self.depth is None or self.intrinsics is None:
-            self.get_logger().warn('Waiting for the depth image and camera info.', throttle_duration_sec=5.0)
-            return None, [], None, None
-        if self.depth.shape[:2] != frame.shape[:2]:
-            self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
-            return None, [], None, None
+        """(PointStamped of the followed object or None, goal boxes as (xyxy, conf), the chosen box, the region looked at).
+        YOLO runs first; depth is only read when it has found the goal, and then only inside the boxes."""
         region = self.next_region(frame.shape)
         x0, y0, x1, y1 = region
         result = self.model.predict(frame[y0:y1, x0:x1], imgsz=self.image_size, conf=self.confidence, verbose=False)[0]
@@ -181,10 +255,20 @@ class ObjectDetection(Node):
         boxes = sorted((([b[0] + x0, b[1] + y0, b[2] + x0, b[3] + y0], p)  # back to whole-frame pixels
                         for b, p, c in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
                         if int(c) == goal), key=lambda b: -b[1])  # the goal only; other words just compete
+
         candidates = []  # (position, box) of every goal detection with a depth reading
-        fx, fy, cx, cy = self.intrinsics
+        if boxes:
+            if self.depth_msg is None or self.intrinsics is None:
+                self.get_logger().warn('Waiting for the depth image and camera info.', throttle_duration_sec=5.0)
+                return None, boxes, None, region
+            depth = self.bridge.imgmsg_to_cv2(self.depth_msg, 'passthrough')  # a view of the message, nothing converted yet
+            if depth.shape[:2] != frame.shape[:2]:
+                self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
+                return None, boxes, None, region
+            scale = 0.001 if self.depth_msg.encoding == '16UC1' else 1.0  # 16UC1 is mm, 32FC1 m
+            fx, fy, cx, cy = self.intrinsics
         for box, _ in boxes:
-            z = depth_at(box, self.depth)
+            z = depth_at(box, depth, scale)
             if z is not None:
                 u, v = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
                 candidates.append((np.array([z, -(u - cx) * z / fx, -(v - cy) * z / fy]), box))  # optical frame to x forward, y left, z up
