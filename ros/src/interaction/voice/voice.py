@@ -1,14 +1,14 @@
 """Voice: speech to text and text to speech for the robot. Everything is in this file.
 
-Listens to the microphone, turns speech into text with Whisper and sends it to Pete,
-then speaks Pete's replies. See README.md in this folder.
+Listens to the microphone, turns speech into text with Whisper and sends it to the middleman
+(ros/src/core/middleman_node.py), then speaks the replies on /pete/response. See README.md in this folder.
 
 Without ROS (typed lines stand in for Pete's replies):
     python3 voice.py --terminal
 
 With ROS:
     python3 voice.py
-    # publishes std_msgs/String on /pete/command, speaks /pete/response
+    # publishes std_msgs/String on /speech/text (the middleman reads it), speaks /pete/response
 """
 
 import argparse
@@ -242,13 +242,14 @@ class Voice:
             if self.addressed(text):
                 print(f'heard: {text}')
                 self.awaiting_follow_up = False
-                self.publish(text)
+                # Whisper often writes the name as peet or peat; the middleman only knows "pete".
+                self.publish(WAKE_WORD.sub('pete', text.lower()))
             else:
                 print(f'ignored (not for me): {text}')
 
 
 def run_terminal(args):
-    voice = Voice(args, lambda text: print(f'-> /pete/command: {text}'))
+    voice = Voice(args, lambda text: print(f'-> {args.text_topic}: {text}'))
     if not args.no_listen:
         threading.Thread(target=voice.listen, daemon=True).start()
     print('Type a line to have it spoken, standing in for a Pete reply. Ctrl+C to quit.')
@@ -266,8 +267,8 @@ def run_ros(args):
 
     rclpy.init()
     node = rclpy.create_node('voice')
-    command_pub = node.create_publisher(String, '/pete/command', 10)
-    voice = Voice(args, lambda text: command_pub.publish(String(data=text)))
+    text_pub = node.create_publisher(String, args.text_topic, 10)
+    voice = Voice(args, lambda text: text_pub.publish(String(data=text)))
     node.create_subscription(String, '/pete/response', lambda msg: voice.on_reply(msg.data), 10)
     threading.Thread(target=voice.listen, daemon=True).start()
     try:
@@ -291,6 +292,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', default='base.en', help='Whisper model: tiny.en, base.en, small.en, ...')
     parser.add_argument('--whisper-url', default=None, help='use the Whisper GPU server (whisper_server.py), e.g. http://127.0.0.1:8765, instead of the CPU')
     parser.add_argument('--no-wake-word', dest='wake_word', action='store_false', help="act on everything heard, not only phrases containing 'Pete'")
+    parser.add_argument('--text-topic', default='/speech/text', help="topic the recognised text is published on; the middleman reads /speech/text and sends scene questions to perception on /pete/command")
     parser.add_argument('--follow-up', type=float, default=6.0, help='seconds after a reply in which no wake word is needed')
     parser.add_argument('--min-rms', type=float, default=0.01, help='minimum loudness that counts as speech; raise it in noisy rooms')
     parser.add_argument('--silence', type=float, default=0.8, help='seconds of quiet that end a phrase')
