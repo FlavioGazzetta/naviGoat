@@ -6,9 +6,15 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+
 def launch_rtabmap(context):
     simulation_dir = os.path.dirname(os.path.dirname(__file__))
-    database_path = os.path.join(simulation_dir, 'maps', 'rtabmap.db')
+    world_file = LaunchConfiguration('world').perform(context)
+    world_name = os.path.splitext(os.path.basename(world_file))[0]
+    database_path = os.path.join(simulation_dir, "maps", f"{world_name}.db")
+    # database_path = os.path.join(simulation_dir, 'maps', 'rtabmap.db')
+    
+
     mode = LaunchConfiguration('mode').perform(context)
     parameters = {
         'use_sim_time': True,
@@ -22,6 +28,17 @@ def launch_rtabmap(context):
         'database_path': database_path,
         'Reg/Strategy': '1',
         'Grid/3D': 'true',
+
+        # CHanges made in order to fix ground misidentified as obstacles
+        'Grid/NormalsSegmentation': 'true', # default just stated for explicitness
+        'Grid/MaxGroundAngle': '45', # same
+        'Grid/NormalK': '20',
+        'Grid/MinGroundHeight': '-0.3',
+        'Grid/MaxGroundHeight': '0.1',
+        'Grid/MaxObstacleHeight': '1.5',
+        'Grid/RayTracing': 'true',
+        'Grid/NoiseFilteringRadius': '0.1',
+        'Grid/NoiseFilteringMinNeighbors': '3',
     }
 
     if mode == 'localisation':
