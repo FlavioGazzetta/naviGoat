@@ -69,9 +69,7 @@ def to_jpeg(image):
 
 
 def busiest_parts(frame, count=2):
-    """The count most interesting parts of a 3x2 grid over the frame, as (crop, where), busiest first.
-    Interesting = many edges and varied colour; bare walls, floor and ceiling score low. Crops come from the full-size
-    frame with a margin, so they show more detail than the shrunk whole view."""
+    """The count most interesting parts of a 3x2 grid over the frame, as (crop, where), busiest first."""
     h, w = frame.shape[:2]
     edges = cv2.Canny(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 80, 160)
     lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
@@ -89,9 +87,7 @@ def busiest_parts(frame, count=2):
 
 
 def collage(frame, parts):
-    """One 1024 px picture: the whole view across the top, the close-ups side by side below.
-    Ollama gives every image at least ~1024 tokens however small, so one collage is read about three times faster
-    than three separate pictures (~3 s instead of ~8.5 s on the Jetson) and shows the same detail."""
+    """One 1024 px picture: the whole view across the top, the close-ups side by side below."""
     width, top_h, bottom_h = 1024, 576, 448
     canvas = np.full((top_h + bottom_h, width, 3), 255, np.uint8)
     canvas[:top_h] = cv2.resize(frame, (width, top_h))
@@ -105,8 +101,7 @@ def collage(frame, parts):
 
 
 def describe(model, frame):
-    """A spoken description of the image, from the whole view plus close-ups of its busiest parts, as one collage
-    in one request. Always returns something sayable."""
+    """A spoken description of the image, from one collage of the whole view and close-ups of its busiest parts."""
     parts = busiest_parts(frame)
     parts.sort(key=lambda p: ['left', 'ahead', 'right'].index(next(s for s in ('left', 'ahead', 'right') if s in p[1])))  # left close-up on the left
     sides = ['bottom left', 'bottom right'] if len(parts) == 2 else ['bottom']

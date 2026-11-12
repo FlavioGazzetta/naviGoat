@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""When /mode switches to 'perception', looks for the /goal object with YOLO-World for search_time seconds, then publishes
-its last location on /object_mapping and 'found:<object>' on /object_status, or 'not_found:<object>'."""
+"""When /mode switches to 'perception', looks for the /goal object with YOLO-World and publishes where it was last seen."""
 
 import collections
 import math
@@ -22,13 +21,6 @@ from std_msgs.msg import String
 YOLO_MODEL = os.environ.get('PETE_YOLO_MODEL', 'yolov8s-worldv2.pt')
 CAMERA_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)  # newest frame only
 
-# YOLO-World always gets this whole list, not just the goal: with only the goal word, anything similar
-# (a cup when looking for a bottle) gets labelled as the goal. Only goal detections are used.
-# The words are turned into YOLO's form once, at launch, so a long list costs almost nothing per frame (about 6% for 100
-# words). Each word must be a clearly different object: near-synonyms (cup and mug) split one object's boxes between
-# them, so synonyms go in ALIASES instead. Most words are YOLO's training classes (COCO), which it knows best.
-# Things people wear or carry (WORN) are not in it: a person is mostly clothes, so those words take the person's box
-# (tested: a person's score fell from 0.89 to 0.47). They are only added while one of them is the goal.
 VOCABULARY = [
     # people and animals
     'person', 'dog', 'cat', 'bird', 'horse',
@@ -86,8 +78,7 @@ def normalise(name):
 
 
 def depth_at(box, depth, scale):
-    """Median depth (m) over the middle half of the box, ignoring holes. None if there is too little.
-    Only this patch of the depth image is read; scale turns its values into meters."""
+    """Median depth (m) over the middle half of the box, ignoring holes. None if there is too little."""
     x1, y1, x2, y2 = box
     w, h = x2 - x1, y2 - y1
     patch = depth[int(y1 + h / 4):int(y2 - h / 4) + 1, int(x1 + w / 4):int(x2 - w / 4) + 1]
@@ -103,20 +94,13 @@ class ObjectDetection(Node):
         self.search_time = param('search_time', 5.0)  # YOLO runs this long per search, then the last location is sent
         # Not lower: tested on COCO128, 0.15 found 2 more of 18 bottles but called 5 more other things 'bottle'.
         self.confidence = param('confidence', 0.25)
-        # YOLO's input width. At 640 a whole 1280 px frame loses half its detail, so with tiles on, every other frame
-        # YOLO looks at one quarter of the frame instead, at full detail, for the same cost (~37 ms on the Jetson).
-        # Each quarter gets a full-detail look about every 8 frames, which finds small or far objects.
         self.image_size = param('image_size', 640)
         self.tiles = param('tiles', True)
         self.tile_reach = param('tile_reach', 0.15)  # how far past the middle a quarter may reach, as a share of the frame height
         self.frame_id = param('frame_id', 'camera_link')
         self.confirm_frames = param('confirm_frames', 3)  # sightings of the same object before 'found', so one-off flukes are ignored
-        # Once a goal object is picked (the closest), stick to it: each frame take the detection nearest to where it was,
-        # within track_gate meters, so it doesn't jump between two chairs. Lost for lost_after seconds: pick again.
         self.track_gate = param('track_gate', 0.5)
         self.lost_after = param('lost_after', 1.0)
-        # While focused on it, missing it in this many looks in a row (~0.2 s) means it moved away fast: look at the
-        # whole frame again at once instead of watching the empty spot for lost_after seconds.
         self.lost_looks = param('lost_looks', 4)
         self.misses = 0
         self.focused = False  # whether this look was a crop around the followed object
@@ -128,14 +112,10 @@ class ObjectDetection(Node):
         self.model = YOLOWorld(param('model_path', YOLO_MODEL))
         self.vocabulary = list(KNOWN)
         self.model.set_classes(self.vocabulary)
-        # YOLO-World compares image regions with each word turned into numbers by a text model (CLIP). Keep the list's
-        # numbers from launch: going back to them is instant, and a new word only needs its own numbers worked out.
         self.list_features = self.model.model.txt_feats.clone()  # for every word in KNOWN
         self.use_words(VOCABULARY)
         self.wanted = list(VOCABULARY)  # the list the goal needs; differs from vocabulary while a new word is learnt
         self.learning = False
-        # Warm up: the first prediction sets up the GPU code (seconds on the Jetson). Do it now, not on the first search.
-        # Once for each shape YOLO is given (whole frame, quarter, crop around a target), as each gets its own setup.
         for h, w in ((720, 1280), (396, 704), (360, 640)):
             self.model.predict(np.zeros((h, w, 3), np.uint8), imgsz=self.image_size, verbose=False)
         self.hits = 0  # sightings of the followed object
@@ -187,8 +167,7 @@ class ObjectDetection(Node):
             self.start_search()  # also when the same goal is sent again
 
     def learn(self):
-        """Work out a new word's numbers. Loading the text model takes seconds on the Jetson, so this runs in the
-        background and the node keeps answering; the search waits for it and its time starts once it's done."""
+        """Work out a new word's numbers in the background, as it takes seconds on the Jetson."""
         while self.wanted != self.vocabulary:  # again if another goal came in meanwhile
             wanted = list(self.wanted)
             if wanted[-1] not in KNOWN:
@@ -260,11 +239,7 @@ class ObjectDetection(Node):
         self.started = None
 
     def next_region(self, shape):
-        """(x1, y1, x2, y2) of the frame YOLO looks at next.
-        While following an object: a crop around it, at least 640x360 so at least full detail, so it is confirmed in a
-        few looks and its location is measured at full detail. Otherwise the whole frame, then a quarter, alternately.
-        A quarter runs from one corner of the frame to a random point just past the middle (within tile_reach of it),
-        so the four always cover the frame but their borders move, and an object on a border isn't always split."""
+        """(x1, y1, x2, y2) of the frame YOLO looks at next."""
         h, w = shape[:2]
         self.focused = self.target_box is not None and time.monotonic() - self.target_seen <= self.lost_after
         if self.focused:
@@ -286,8 +261,7 @@ class ObjectDetection(Node):
         return int(x1), int(y1), int(x2), int(y2)
 
     def locate(self, frame, stamp):
-        """(PointStamped of the followed object or None, goal boxes as (xyxy, conf), the chosen box, the region looked at).
-        YOLO runs first; depth is only read when it has found the goal, and then only inside the boxes."""
+        """(PointStamped of the followed object or None, goal boxes as (xyxy, conf), the chosen box, the region looked at)."""
         region = self.next_region(frame.shape)
         x0, y0, x1, y1 = region
         result = self.model.predict(frame[y0:y1, x0:x1], imgsz=self.image_size, conf=self.confidence, verbose=False)[0]
@@ -338,8 +312,7 @@ class ObjectDetection(Node):
         return point, boxes, pick[1], region
 
     def publish_preview(self, frame, boxes, chosen, point, region):
-        """Green box: the detection sent to navigation. Grey: other detections (no depth reading, or less confident).
-        Blue outline: the quarter YOLO looked at in full detail this frame."""
+        """Green box: the detection sent to navigation. Grey: other detections (no depth reading, or less confident)."""
         scale = 640 / frame.shape[1]
         image = cv2.resize(frame, (640, int(frame.shape[0] * scale)))
         if region is not None and region != (0, 0, frame.shape[1], frame.shape[0]):

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Publishes the Orbbec Femto Bolt's colour, depth (aligned to colour, 16UC1 mm) and camera info,
-on the same topics as the Orbbec ROS 2 driver. Use one or the other, not both."""
+"""Publishes the Orbbec Femto Bolt's colour, depth (aligned to colour, 16UC1 mm) and camera info."""
 
 import threading
 

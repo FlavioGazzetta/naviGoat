@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Shows Pete's camera preview in a window. While object detection is searching, it shows what YOLO sees, with its boxes.
-Run it on any computer on the robot's network. Press q to quit."""
+"""Shows Pete's camera preview in a window. While object detection is searching, it shows what YOLO sees, with its boxes."""
 
 import time
 
