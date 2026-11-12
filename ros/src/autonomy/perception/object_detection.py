@@ -2,7 +2,9 @@
 """While /mode is 'perception', finds the /goal object with YOLO-World and publishes its position on /object_mapping,
 or 'not_found:<object>' on /object_status after search_timeout seconds."""
 
+import math
 import os
+import random
 import time
 
 import cv2
@@ -61,6 +63,7 @@ class ObjectDetection(Node):
         # Each quarter gets a full-detail look about every 8 frames, which finds small or far objects.
         self.image_size = param('image_size', 640)
         self.tiles = param('tiles', True)
+        self.tile_reach = param('tile_reach', 0.15)  # how far past the middle a quarter may reach, as a share of the frame height
         self.frame_id = param('frame_id', 'camera_link')
         self.confirm_frames = param('confirm_frames', 3)  # sightings of the same object before 'found', so one-off flukes are ignored
         # Once a goal object is picked (the closest), stick to it: each frame take the detection nearest to where it was,
@@ -149,14 +152,19 @@ class ObjectDetection(Node):
 
     def next_region(self, shape):
         """(x1, y1, x2, y2) of the frame YOLO looks at next: the whole frame, then a quarter, alternately.
-        Quarters overlap by a tenth of the frame, so an object on a border isn't cut in half."""
+        A quarter runs from one corner of the frame to a random point just past the middle (within tile_reach of it),
+        so the four always cover the frame but their borders move, and an object on a border isn't always split."""
         h, w = shape[:2]
         self.look += 1
         if not self.tiles or self.look % 2:
             return 0, 0, w, h
-        tw, th = int(w * 0.55), int(h * 0.55)
-        x, y = [(0, 0), (w - tw, 0), (0, h - th), (w - tw, h - th)][(self.look // 2) % 4]
-        return x, y, x + tw, y + th
+        corner = (self.look // 2) % 4  # top left, top right, bottom left, bottom right
+        reach = random.uniform(0.3, 1.0) * self.tile_reach * min(w, h)
+        angle = random.uniform(0, math.pi / 2)
+        dx, dy = reach * math.cos(angle), reach * math.sin(angle)  # how far past the middle, towards the far side
+        x1, x2 = (0, w / 2 + dx) if corner in (0, 2) else (w / 2 - dx, w)
+        y1, y2 = (0, h / 2 + dy) if corner in (0, 1) else (h / 2 - dy, h)
+        return int(x1), int(y1), int(x2), int(y2)
 
     def locate(self, frame):
         """(PointStamped of the followed object or None, goal boxes as (xyxy, conf), the chosen box, the region looked at)."""
