@@ -56,11 +56,13 @@ class ObjectDetection(Node):
         self.mode_name = param('mode_name', 'perception')
         self.timeout = param('search_timeout', 10.0)
         self.confidence = param('confidence', 0.25)
-        # YOLO's input width. Its default, 640, halves our 1280 px frames and loses objects a few meters away.
-        # On the Jetson: 640 ~37 ms, 960 ~49 ms, 1280 ~69 ms per frame.
-        self.image_size = param('image_size', 1280)
+        # YOLO's input width. At 640 a whole 1280 px frame loses half its detail, so with tiles on, every other frame
+        # YOLO looks at one quarter of the frame instead, at full detail, for the same cost (~37 ms on the Jetson).
+        # Each quarter gets a full-detail look about every 8 frames, which finds small or far objects.
+        self.image_size = param('image_size', 640)
+        self.tiles = param('tiles', True)
         self.frame_id = param('frame_id', 'camera_link')
-        self.confirm_frames = param('confirm_frames', 3)  # frames in a row before 'found', so one-frame flukes are ignored
+        self.confirm_frames = param('confirm_frames', 3)  # sightings of the same object before 'found', so one-off flukes are ignored
         # Once a goal object is picked (the closest), stick to it: each frame take the detection nearest to where it was,
         # within track_gate meters, so it doesn't jump between two chairs. Lost for lost_after seconds: pick again.
         self.track_gate = param('track_gate', 0.5)
@@ -72,7 +74,8 @@ class ObjectDetection(Node):
         self.model = YOLOWorld(param('model_path', YOLO_MODEL))
         self.vocabulary = list(VOCABULARY)
         self.model.set_classes(self.vocabulary)
-        self.hits = 0
+        self.hits = 0  # sightings of the followed object
+        self.look = 0  # counts YOLO looks: even = whole frame, odd = the next quarter
         self.bridge = CvBridge()
         self.mode = ''
         self.goal = ''
@@ -116,7 +119,7 @@ class ObjectDetection(Node):
     def start_search(self):
         if not self.goal:
             return
-        self.started, self.found, self.hits, self.target = time.monotonic(), False, 0, None
+        self.started, self.found, self.hits, self.target, self.look = time.monotonic(), False, 0, None, 0
         self.get_logger().info(f'Looking for a {self.goal}.')
 
     def on_info(self, msg):
@@ -130,9 +133,8 @@ class ObjectDetection(Node):
         if self.started is None:
             return  # YOLO stays idle
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-        point, boxes, chosen = self.locate(frame)
-        self.publish_preview(frame, boxes, chosen, point)
-        self.hits = self.hits + 1 if point is not None else 0
+        point, boxes, chosen, region = self.locate(frame)
+        self.publish_preview(frame, boxes, chosen, point, region)
         if point is not None and (self.found or self.hits >= self.confirm_frames):
             point.header.stamp = msg.header.stamp
             self.point_pub.publish(point)
@@ -145,17 +147,31 @@ class ObjectDetection(Node):
             self.get_logger().info(f'No {self.goal} found after {self.timeout:g} s.')
             self.started = None
 
+    def next_region(self, shape):
+        """(x1, y1, x2, y2) of the frame YOLO looks at next: the whole frame, then a quarter, alternately.
+        Quarters overlap by a tenth of the frame, so an object on a border isn't cut in half."""
+        h, w = shape[:2]
+        self.look += 1
+        if not self.tiles or self.look % 2:
+            return 0, 0, w, h
+        tw, th = int(w * 0.55), int(h * 0.55)
+        x, y = [(0, 0), (w - tw, 0), (0, h - th), (w - tw, h - th)][(self.look // 2) % 4]
+        return x, y, x + tw, y + th
+
     def locate(self, frame):
-        """(PointStamped of the followed object or None, all goal boxes as (xyxy, conf), the chosen box)."""
+        """(PointStamped of the followed object or None, goal boxes as (xyxy, conf), the chosen box, the region looked at)."""
         if self.depth is None or self.intrinsics is None:
             self.get_logger().warn('Waiting for the depth image and camera info.', throttle_duration_sec=5.0)
-            return None, [], None
+            return None, [], None, None
         if self.depth.shape[:2] != frame.shape[:2]:
             self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
-            return None, [], None
-        result = self.model.predict(frame, imgsz=self.image_size, conf=self.confidence, verbose=False)[0]
+            return None, [], None, None
+        region = self.next_region(frame.shape)
+        x0, y0, x1, y1 = region
+        result = self.model.predict(frame[y0:y1, x0:x1], imgsz=self.image_size, conf=self.confidence, verbose=False)[0]
         goal = self.vocabulary.index(self.goal)
-        boxes = sorted(((b, p) for b, p, c in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
+        boxes = sorted((([b[0] + x0, b[1] + y0, b[2] + x0, b[3] + y0], p)  # back to whole-frame pixels
+                        for b, p, c in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
                         if int(c) == goal), key=lambda b: -b[1])  # the goal only; other words just compete
         candidates = []  # (position, box) of every goal detection with a depth reading
         fx, fy, cx, cy = self.intrinsics
@@ -170,23 +186,27 @@ class ObjectDetection(Node):
             self.target = None  # lost it: pick again
         if self.target is None:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0]), default=None)  # the closest one
+            self.hits = 0
         else:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0] - self.target), default=None)  # the same one as before
             if pick is not None and np.linalg.norm(pick[0] - self.target) > self.track_gate:
                 pick = None  # only other objects in view: don't swap to them
         if pick is None:
-            return None, boxes, None
+            return None, boxes, None, region  # a look that missed it (e.g. another quarter) doesn't undo the sightings
 
-        self.target, self.target_seen = pick[0], now
+        self.target, self.target_seen, self.hits = pick[0], now, self.hits + 1
         point = PointStamped()
         point.header.frame_id = self.frame_id
         point.point.x, point.point.y, point.point.z = (float(c) for c in pick[0])
-        return point, boxes, pick[1]
+        return point, boxes, pick[1], region
 
-    def publish_preview(self, frame, boxes, chosen, point):
-        """Green box: the detection sent to navigation. Grey: other detections (no depth reading, or less confident)."""
+    def publish_preview(self, frame, boxes, chosen, point, region):
+        """Green box: the detection sent to navigation. Grey: other detections (no depth reading, or less confident).
+        Blue outline: the quarter YOLO looked at in full detail this frame."""
         scale = 640 / frame.shape[1]
         image = cv2.resize(frame, (640, int(frame.shape[0] * scale)))
+        if region is not None and region != (0, 0, frame.shape[1], frame.shape[0]):
+            cv2.rectangle(image, *[tuple(int(c * scale) for c in corner) for corner in (region[:2], region[2:])], (255, 140, 0), 1)
         for box, conf in boxes:
             x1, y1, x2, y2 = (int(c * scale) for c in box)
             is_chosen = box is chosen
