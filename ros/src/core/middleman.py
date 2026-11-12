@@ -156,8 +156,12 @@ def as_location(target, locations):
 
 def as_object(target):
     target = OBJECT_ALIASES.get(target, target)
-    if target.endswith('s') and target[:-1] in OBJECTS:
-        target = target[:-1]
+    if target not in OBJECTS:
+        for ending in ('es', 's'):  # 'buses' -> 'bus', 'chairs' -> 'chair', 'sofas' -> 'couch'
+            if target.endswith(ending):
+                singular = OBJECT_ALIASES.get(target[:-len(ending)], target[:-len(ending)])
+                if singular in OBJECTS:
+                    return singular
     return target if target in OBJECTS else close_to(target, OBJECTS)
 
 
@@ -386,6 +390,16 @@ class Middleman:
                     self.current = Decision(Mode.LOCATION, 'goto', place, current.text, reply=f'No {current.target}. Going to the {place}.')
                     return self.current
             return None
+
+    def not_found(self, goal):
+        """Perception searched for goal and did not find it. Returns the Decision to act on, or None if the report is
+        not about the object being guided to (a late report, or one after a stop). The Decision's reply says what
+        went wrong. Its mode is LOCATION if a stored place stands in for the object, otherwise None and the mode is IDLE."""
+        with self._lock:
+            current = self.current
+            if not current or current.mode is not Mode.OBJECT or current.target != goal:
+                return None
+            return self.fail() or Decision(None, text=current.text, reply=f"I couldn't find the {goal}.")
 
 
 def format_decision(decision):

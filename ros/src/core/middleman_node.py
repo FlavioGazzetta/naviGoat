@@ -7,6 +7,8 @@
     /middleman/heard  (std_msgs/String, out)  published when a request goes to perception (no spoken reply); play a beep on it
 
     /middleman/done   (std_msgs/String, in)   the robot reached the goal of a location, object or GPS request
+    /object_status    (std_msgs/String, in)   perception's search result, 'found:<object>' or 'not_found:<object>'; a failed
+                                              search is spoken ("I couldn't find the chair.") and the mode goes back to idle
 
 Modes other than perception read /middleman/mode. Nothing subscribes to it yet.
 Goal modes end when the robot publishes /middleman/done. Following and manual mode have no goal: they end when
@@ -64,10 +66,25 @@ def main():
         mode_pub.publish(String(data=json.dumps({'mode': 'idle', 'target': '', 'intent': '', 'stop': False})))
         response_pub.publish(String(data='Arrived.'))
 
+    def on_object_status(msg):
+        """Perception's report at the end of a search: 'found:chair' or 'not_found:chair'. Only a failed search is spoken."""
+        status, _, goal = msg.data.partition(':')
+        if status != 'not_found':
+            return
+        decision = middleman.not_found(goal.strip().lower())
+        if decision is None:
+            return
+        if decision.mode is not None:  # a stored place stands in for the object
+            mode_pub.publish(String(data=json.dumps({'mode': decision.mode.value, 'target': decision.target, 'intent': decision.intent, 'stop': False})))
+        else:
+            mode_pub.publish(String(data=json.dumps({'mode': 'idle', 'target': '', 'intent': '', 'stop': False})))
+        response_pub.publish(String(data=decision.reply))
+
     # Several threads and a reentrant group: a "stop" is handled while a slow request is still with Qwen.
     group = ReentrantCallbackGroup()
     node.create_subscription(String, '/speech/text', on_speech, 10, callback_group=group)
     node.create_subscription(String, '/middleman/done', on_done, 10, callback_group=group)
+    node.create_subscription(String, '/object_status', on_object_status, 10, callback_group=group)
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     try:
