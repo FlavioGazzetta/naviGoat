@@ -85,29 +85,6 @@ def normalise(name):
     return name
 
 
-# Typical real height (m) of upright things, to estimate the distance from how tall the box is when the depth camera has
-# no reading (glass, shiny or black things, beyond ~4 m). Flat or shapeless things (keyboard, towel, stairs) are left out.
-HEIGHTS_M = {
-    'person': 1.7, 'dog': 0.6, 'cat': 0.3, 'bird': 0.2, 'horse': 1.6, 'chair': 0.9, 'couch': 0.85, 'bed': 0.6,
-    'table': 0.75, 'bench': 0.8, 'door': 2.0, 'door handle': 0.06, 'window': 1.2, 'elevator': 2.1, 'light switch': 0.09,
-    'toilet': 0.75, 'sink': 0.3, 'bathtub': 0.55, 'mirror': 0.6, 'lamp': 0.5, 'clock': 0.3, 'cupboard': 1.8, 'bin': 0.6,
-    'plant': 0.5, 'vase': 0.3, 'tv': 0.6, 'laptop': 0.25, 'remote': 0.18, 'cell phone': 0.15, 'headphones': 0.2,
-    'printer': 0.3, 'speaker': 0.25, 'refrigerator': 1.7, 'microwave': 0.3, 'oven': 0.9, 'toaster': 0.2, 'kettle': 0.25,
-    'bottle': 0.25, 'can': 0.12, 'cup': 0.1, 'bowl': 0.08, 'apple': 0.08, 'orange': 0.08, 'banana': 0.2, 'cake': 0.1,
-    'backpack': 0.45, 'handbag': 0.3, 'suitcase': 0.65, 'umbrella': 0.9, 'hat': 0.15, 'jacket': 0.7, 'shoe': 0.12,
-    'book': 0.22, 'teddy bear': 0.3, 'hair drier': 0.25, 'toothbrush': 0.19, 'pillow': 0.4, 'sports ball': 0.22,
-    'tennis racket': 0.68, 'traffic light': 0.4, 'stop sign': 0.75, 'fire hydrant': 0.8, 'car': 1.5, 'bus': 3.0,
-    'truck': 3.0, 'bicycle': 1.0, 'motorcycle': 1.1}
-
-
-def size_distance(box, label, fy, frame_h):
-    """Distance (m) guessed from how tall the box is, or None: no typical height, or the box is cut off by the frame."""
-    real = HEIGHTS_M.get(label)
-    if real is None or box[1] <= 2 or box[3] >= frame_h - 2:
-        return None
-    return fy * real / max(box[3] - box[1], 1)
-
-
 def depth_at(box, depth, scale):
     """Median depth (m) over the middle half of the box, ignoring holes. None if there is too little.
     Only this patch of the depth image is read; scale turns its values into meters."""
@@ -146,8 +123,6 @@ class ObjectDetection(Node):
         self.target = None  # (x, y, z) of the object being followed
         self.target_box = None  # its last box in pixels: while following it, YOLO looks at a crop around it
         self.target_seen = 0.0
-        self.history = collections.deque(maxlen=5)  # its last positions; the median is sent, so one bad frame doesn't matter
-        self.measured = True  # whether the last position came from the depth camera (False: guessed from its size)
 
         from ultralytics import YOLOWorld
         self.model = YOLOWorld(param('model_path', YOLO_MODEL))
@@ -243,7 +218,6 @@ class ObjectDetection(Node):
         if not self.goal:
             return
         self.started, self.last_point, self.hits, self.target, self.target_box, self.look = time.monotonic(), None, 0, None, None, 0
-        self.history.clear()
         if not self.learning:
             self.get_logger().info(f'Looking for a {self.goal}.')
 
@@ -266,7 +240,6 @@ class ObjectDetection(Node):
         self.misses = 0 if chosen is not None else self.misses + self.focused
         if self.misses >= self.lost_looks:  # gone from where it was: drop it and look at the whole frame next
             self.target, self.target_box, self.misses, self.look = None, None, 0, 0
-            self.history.clear()
         self.publish_preview(frame, boxes, chosen, point, region)
         if point is not None and self.hits >= self.confirm_frames:
             point.header.stamp = msg.header.stamp
@@ -280,8 +253,7 @@ class ObjectDetection(Node):
             p = self.last_point.point
             self.point_pub.publish(self.last_point)
             self.status_pub.publish(String(data=f'found:{self.goal}'))
-            guess = '' if self.measured else ' (no depth reading, distance guessed from its size)'
-            self.get_logger().info(f'Found the {self.goal}, last seen at x={p.x:.2f} m, y={p.y:.2f} m{guess}.')
+            self.get_logger().info(f'Found the {self.goal}, last seen at x={p.x:.2f} m, y={p.y:.2f} m.')
         else:
             self.status_pub.publish(String(data=f'not_found:{self.goal}'))
             self.get_logger().info(f'No {self.goal} found in {self.search_time:g} s.')
@@ -329,46 +301,40 @@ class ObjectDetection(Node):
             self.get_logger().warn('Waiting for the camera info.', throttle_duration_sec=5.0)
             return None, boxes, None, region
 
-        depth, scale = None, 1.0
         depth_msg = self.depth_for(stamp)
-        if depth_msg is not None:
-            depth = self.bridge.imgmsg_to_cv2(depth_msg, 'passthrough')  # a view of the message, nothing converted yet
-            if depth.shape[:2] != frame.shape[:2]:
-                self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
-                depth = None
-            scale = 0.001 if depth_msg.encoding == '16UC1' else 1.0  # 16UC1 is mm, 32FC1 m
+        if depth_msg is None:
+            self.get_logger().warn('Waiting for the depth image.', throttle_duration_sec=5.0)
+            return None, boxes, None, region
+        depth = self.bridge.imgmsg_to_cv2(depth_msg, 'passthrough')  # a view of the message, nothing converted yet
+        if depth.shape[:2] != frame.shape[:2]:
+            self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
+            return None, boxes, None, region
+        scale = 0.001 if depth_msg.encoding == '16UC1' else 1.0  # 16UC1 is mm, 32FC1 m
         fx, fy, cx, cy = self.intrinsics
-        candidates = []  # (position, box, measured) of every goal detection whose distance is known or can be guessed
+        candidates = []  # (position, box) of every goal detection with a depth reading
         for box, _ in boxes:
-            z = depth_at(box, depth, scale) if depth is not None else None
-            measured = z is not None
-            if z is None:
-                z = size_distance(box, self.goal, fy, frame.shape[0])  # no depth reading: guess from its size
+            z = depth_at(box, depth, scale)
             if z is not None:
                 u, v = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
-                candidates.append((np.array([z, -(u - cx) * z / fx, -(v - cy) * z / fy]), box, measured))  # optical frame to x forward, y left, z up
+                candidates.append((np.array([z, -(u - cx) * z / fx, -(v - cy) * z / fy]), box))  # optical frame to x forward, y left, z up
 
         now = time.monotonic()
         if self.target is not None and now - self.target_seen > self.lost_after:
             self.target, self.target_box = None, None  # lost it: pick again
-            self.history.clear()
         if self.target is None:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0]), default=None)  # the closest one
             self.hits = 0
         else:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0] - self.target), default=None)  # the same one as before
-            gate = max(self.track_gate, 0.2 * self.target[0])  # guessed distances wobble more the further away
-            if pick is not None and np.linalg.norm(pick[0] - self.target) > gate:
+            if pick is not None and np.linalg.norm(pick[0] - self.target) > self.track_gate:
                 pick = None  # only other objects in view: don't swap to them
         if pick is None:
             return None, boxes, None, region
 
         self.target, self.target_box, self.target_seen, self.hits = pick[0], pick[1], now, self.hits + 1
-        self.history.append(pick[0])
         point = PointStamped()
         point.header.frame_id = self.frame_id
-        point.point.x, point.point.y, point.point.z = (float(c) for c in np.median(self.history, axis=0))
-        self.measured = pick[2]
+        point.point.x, point.point.y, point.point.z = (float(c) for c in pick[0])
         return point, boxes, pick[1], region
 
     def publish_preview(self, frame, boxes, chosen, point, region):
@@ -381,8 +347,7 @@ class ObjectDetection(Node):
         for box, conf in boxes:
             x1, y1, x2, y2 = (int(c * scale) for c in box)
             is_chosen = box is chosen
-            label = (f"{self.goal} {'' if self.measured else '~'}{point.point.x:.1f} m"  # ~ = guessed from its size
-                     if is_chosen else f'{self.goal} {conf:.2f}')
+            label = f'{self.goal} {point.point.x:.1f} m' if is_chosen else f'{self.goal} {conf:.2f}'
             colour = (0, 200, 0) if is_chosen else (160, 160, 160)
             cv2.rectangle(image, (x1, y1), (x2, y2), colour, 2)
             cv2.putText(image, label, (x1, max(y1 - 6, 14)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 2)
