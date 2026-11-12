@@ -17,12 +17,12 @@ def generate_launch_description():
         output='screen',
     )
     detection = ExecuteProcess(
-        cmd=['python3', os.path.join(perception_dir, 'object_detection.py'), '--ros-args', '-p', ['search_timeout:=', LaunchConfiguration('search_timeout')]],
+        cmd=['python3', os.path.join(perception_dir, 'object_detection.py'), '--ros-args', '-p', ['search_time:=', LaunchConfiguration('search_time')]],
         output='screen',
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('search_timeout', default_value='10.0'),
+        DeclareLaunchArgument('search_time', default_value='5.0'),
         DeclareLaunchArgument('camera', default_value='false'),
         # The Femto Bolt node from hardware/camera, when nothing else runs the camera
         IncludeLaunchDescription(PythonLaunchDescriptionSource(os.path.normpath(camera_launch)), condition=IfCondition(LaunchConfiguration('camera'))),

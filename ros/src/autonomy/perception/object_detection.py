@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""While /mode is 'perception', finds the /goal object with YOLO-World and publishes its position on /object_mapping,
-or 'not_found:<object>' on /object_status after search_timeout seconds."""
+"""When /mode switches to 'perception', looks for the /goal object with YOLO-World for search_time seconds, then publishes
+its last location on /object_mapping and 'found:<object>' on /object_status, or 'not_found:<object>'."""
 
 import math
 import os
@@ -96,7 +96,7 @@ class ObjectDetection(Node):
         super().__init__('object_detection')
         param = lambda name, default: self.declare_parameter(name, default).value
         self.mode_name = param('mode_name', 'perception')
-        self.timeout = param('search_timeout', 10.0)
+        self.search_time = param('search_time', 5.0)  # YOLO runs this long per search, then the last location is sent
         self.confidence = param('confidence', 0.25)
         # YOLO's input width. At 640 a whole 1280 px frame loses half its detail, so with tiles on, every other frame
         # YOLO looks at one quarter of the frame instead, at full detail, for the same cost (~37 ms on the Jetson).
@@ -132,7 +132,7 @@ class ObjectDetection(Node):
         self.mode = ''
         self.goal = ''
         self.started = None  # None when not searching
-        self.found = False
+        self.last_point = None  # the followed object's last confirmed location in this search
         self.depth_msg = None  # the newest depth image, only read once YOLO has a goal box
         self.intrinsics = None  # fx, fy, cx, cy
 
@@ -172,7 +172,7 @@ class ObjectDetection(Node):
 
     def learn(self):
         """Work out a new word's numbers. Loading the text model takes seconds on the Jetson, so this runs in the
-        background and the node keeps answering; the search waits for it and its timeout starts once it's done."""
+        background and the node keeps answering; the search waits for it and its time starts once it's done."""
         while self.wanted != self.vocabulary:  # again if another goal came in meanwhile
             wanted = list(self.wanted)
             if wanted[-1] not in VOCABULARY:
@@ -201,7 +201,7 @@ class ObjectDetection(Node):
     def start_search(self):
         if not self.goal:
             return
-        self.started, self.found, self.hits, self.target, self.look = time.monotonic(), False, 0, None, 0
+        self.started, self.last_point, self.hits, self.target, self.look = time.monotonic(), None, 0, None, 0
         if not self.learning:
             self.get_logger().info(f'Looking for a {self.goal}.')
 
@@ -217,17 +217,23 @@ class ObjectDetection(Node):
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
         point, boxes, chosen, region = self.locate(frame)
         self.publish_preview(frame, boxes, chosen, point, region)
-        if point is not None and (self.found or self.hits >= self.confirm_frames):
+        if point is not None and self.hits >= self.confirm_frames:
             point.header.stamp = msg.header.stamp
-            self.point_pub.publish(point)
-            if not self.found:
-                self.found = True
-                self.status_pub.publish(String(data=f'found:{self.goal}'))
-                self.get_logger().info(f'Found the {self.goal} at x={point.point.x:.2f} m, y={point.point.y:.2f} m.')
-        elif not self.found and time.monotonic() - self.started > self.timeout:
+            self.last_point = point  # where it was last seen, sent when the search ends
+        if time.monotonic() - self.started >= self.search_time:
+            self.finish()
+
+    def finish(self):
+        """End of the search: send the object's last location once, or that it wasn't found. YOLO then stops."""
+        if self.last_point is not None:
+            p = self.last_point.point
+            self.point_pub.publish(self.last_point)
+            self.status_pub.publish(String(data=f'found:{self.goal}'))
+            self.get_logger().info(f'Found the {self.goal}, last seen at x={p.x:.2f} m, y={p.y:.2f} m.')
+        else:
             self.status_pub.publish(String(data=f'not_found:{self.goal}'))
-            self.get_logger().info(f'No {self.goal} found after {self.timeout:g} s.')
-            self.started = None
+            self.get_logger().info(f'No {self.goal} found in {self.search_time:g} s.')
+        self.started = None
 
     def next_region(self, shape):
         """(x1, y1, x2, y2) of the frame YOLO looks at next: the whole frame, then a quarter, alternately.
