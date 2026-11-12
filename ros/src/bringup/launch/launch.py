@@ -14,4 +14,5 @@ def include_package_launch(package, filename):
 def generate_launch_description():
     return LaunchDescription([
         include_package_launch('handle_nodes', 'handle_launch.py'),
+        include_package_launch('wristband_nodes', 'wristband_launch.py'),
     ])

@@ -6,7 +6,7 @@ FROM ros:jazzy-perception-noble AS base-arm64
 
 FROM ${BASE_IMAGE}
 
-RUN apt-get update && apt-get install -y -o Acquire::http::Pipeline-Depth=0 --no-install-recommends neovim tree ros-jazzy-rviz2 ros-jazzy-rtabmap-ros python3-pip python3-numpy python3-serial && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y -o Acquire::http::Pipeline-Depth=0 --no-install-recommends neovim tree ros-jazzy-rviz2 ros-jazzy-rtabmap-ros python3-pip python3-numpy python3-serial python3-bleak && rm -rf /var/lib/apt/lists/*
 RUN python3 -m pip install --break-system-packages dynamic-object-removal==0.6.0
 
 ARG PETE=false
