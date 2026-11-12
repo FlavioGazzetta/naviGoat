@@ -124,9 +124,8 @@ class ObjectDetection(Node):
         param = lambda name, default: self.declare_parameter(name, default).value
         self.mode_name = param('mode_name', 'perception')
         self.search_time = param('search_time', 5.0)  # YOLO runs this long per search, then the last location is sent
-        # Lower than YOLO's usual 0.25: YOLO-World often scores real small objects 0.15-0.25, and the confirmation
-        # (confirm_frames sightings of the same object) already filters out one-off flukes.
-        self.confidence = param('confidence', 0.15)
+        # Not lower: tested on COCO128, 0.15 found 2 more of 18 bottles but called 5 more other things 'bottle'.
+        self.confidence = param('confidence', 0.25)
         # YOLO's input width. At 640 a whole 1280 px frame loses half its detail, so with tiles on, every other frame
         # YOLO looks at one quarter of the frame instead, at full detail, for the same cost (~37 ms on the Jetson).
         # Each quarter gets a full-detail look about every 8 frames, which finds small or far objects.
@@ -139,6 +138,11 @@ class ObjectDetection(Node):
         # within track_gate meters, so it doesn't jump between two chairs. Lost for lost_after seconds: pick again.
         self.track_gate = param('track_gate', 0.5)
         self.lost_after = param('lost_after', 1.0)
+        # While focused on it, missing it in this many looks in a row (~0.2 s) means it moved away fast: look at the
+        # whole frame again at once instead of watching the empty spot for lost_after seconds.
+        self.lost_looks = param('lost_looks', 4)
+        self.misses = 0
+        self.focused = False  # whether this look was a crop around the followed object
         self.target = None  # (x, y, z) of the object being followed
         self.target_box = None  # its last box in pixels: while following it, YOLO looks at a crop around it
         self.target_seen = 0.0
@@ -259,6 +263,10 @@ class ObjectDetection(Node):
             return  # YOLO stays idle, or the word list is being changed
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
         point, boxes, chosen, region = self.locate(frame, msg.header.stamp)
+        self.misses = 0 if chosen is not None else self.misses + self.focused
+        if self.misses >= self.lost_looks:  # gone from where it was: drop it and look at the whole frame next
+            self.target, self.target_box, self.misses, self.look = None, None, 0, 0
+            self.history.clear()
         self.publish_preview(frame, boxes, chosen, point, region)
         if point is not None and self.hits >= self.confirm_frames:
             point.header.stamp = msg.header.stamp
@@ -286,7 +294,8 @@ class ObjectDetection(Node):
         A quarter runs from one corner of the frame to a random point just past the middle (within tile_reach of it),
         so the four always cover the frame but their borders move, and an object on a border isn't always split."""
         h, w = shape[:2]
-        if self.target_box is not None and time.monotonic() - self.target_seen <= self.lost_after:
+        self.focused = self.target_box is not None and time.monotonic() - self.target_seen <= self.lost_after
+        if self.focused:
             x1, y1, x2, y2 = self.target_box
             cw = min(w, max(640, 3 * (x2 - x1), 3 * (y2 - y1) * 16 / 9))
             ch = min(h, cw * 9 / 16)

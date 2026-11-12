@@ -68,7 +68,7 @@ To watch the camera from a laptop on the same network, with `camera:=true`, run 
 | --- | --- | --- | --- |
 | `camera` | launch argument | `false` | `true` starts [the camera node](../../hardware/camera) for the Femto Bolt |
 | `search_time` | object_detection | `5.0` | seconds YOLO looks for the goal each time the mode switches to `perception`, before sending its last location; also a launch argument |
-| `confidence` | object_detection | `0.15` | minimum YOLO confidence. Lower than YOLO's usual 0.25 because YOLO-World scores real small objects 0.15-0.25; the confirmation filters out flukes |
+| `confidence` | object_detection | `0.25` | minimum YOLO confidence. Tested on COCO128: 0.15 found 2 more of 18 bottles but called 5 more other things 'bottle' |
 | `image_size` | object_detection | `640` | width YOLO looks at. A whole 1280 px frame at 640 loses half its detail, which is why `tiles` is on |
 | `tiles` | object_detection | `true` | every other frame, look at one quarter of the frame in full detail instead of the whole frame: finds small or far objects at the speed of 640 (about 37 ms a frame on the Jetson) |
 | `tile_reach` | object_detection | `0.15` | each quarter runs from a corner to a random point past the middle, at most this share of the frame height from it, so the borders between quarters move and an object on one isn't always split |
