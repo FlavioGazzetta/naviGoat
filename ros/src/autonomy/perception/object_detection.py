@@ -2,6 +2,7 @@
 """When /mode switches to 'perception', looks for the /goal object with YOLO-World for search_time seconds, then publishes
 its last location on /object_mapping and 'found:<object>' on /object_status, or 'not_found:<object>'."""
 
+import collections
 import math
 import os
 import random
@@ -26,6 +27,8 @@ CAMERA_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)  # n
 # The words are turned into YOLO's form once, at launch, so a long list costs almost nothing per frame (about 6% for 100
 # words). Each word must be a clearly different object: near-synonyms (cup and mug) split one object's boxes between
 # them, so synonyms go in ALIASES instead. Most words are YOLO's training classes (COCO), which it knows best.
+# Things people wear or carry (WORN) are not in it: a person is mostly clothes, so those words take the person's box
+# (tested: a person's score fell from 0.89 to 0.47). They are only added while one of them is the goal.
 VOCABULARY = [
     # people and animals
     'person', 'dog', 'cat', 'bird', 'horse',
@@ -40,12 +43,13 @@ VOCABULARY = [
     # food
     'banana', 'apple', 'orange', 'sandwich', 'pizza', 'cake',
     # personal things
-    'backpack', 'handbag', 'suitcase', 'umbrella', 'keys', 'wallet', 'glasses', 'hat', 'jacket', 'shoe', 'book',
-    'pen', 'scissors', 'toothbrush', 'towel', 'pillow', 'box', 'teddy bear', 'hair drier',
+    'suitcase', 'keys', 'wallet', 'book', 'pen', 'scissors', 'toothbrush', 'towel', 'pillow', 'box', 'hair drier',
     # sport and play
     'sports ball', 'frisbee', 'tennis racket', 'skateboard',
     # street
     'traffic light', 'stop sign', 'fire hydrant', 'car', 'bus', 'truck', 'bicycle', 'motorcycle']
+WORN = ['backpack', 'handbag', 'umbrella', 'glasses', 'hat', 'jacket', 'shoe', 'teddy bear']
+KNOWN = VOCABULARY + WORN  # every word whose numbers are worked out at launch
 ALIASES = {
     'people': 'person', 'man': 'person', 'woman': 'person', 'child': 'person', 'human': 'person', 'puppy': 'dog',
     'kitten': 'cat',
@@ -74,11 +78,34 @@ PLURAL = {'stairs', 'keys', 'glasses', 'headphones', 'scissors'}
 def normalise(name):
     """The vocabulary's word for what was asked for: 'sofa' -> 'couch', 'chairs' -> 'chair'."""
     name = ALIASES.get(name, name)
-    if name not in PLURAL and name not in VOCABULARY:
+    if name not in PLURAL and name not in KNOWN:
         for ending in ('es', 's'):  # 'buses' -> 'bus', 'chairs' -> 'chair'
-            if name.endswith(ending) and ALIASES.get(name[:-len(ending)], name[:-len(ending)]) in VOCABULARY:
+            if name.endswith(ending) and ALIASES.get(name[:-len(ending)], name[:-len(ending)]) in KNOWN:
                 return ALIASES.get(name[:-len(ending)], name[:-len(ending)])
     return name
+
+
+# Typical real height (m) of upright things, to estimate the distance from how tall the box is when the depth camera has
+# no reading (glass, shiny or black things, beyond ~4 m). Flat or shapeless things (keyboard, towel, stairs) are left out.
+HEIGHTS_M = {
+    'person': 1.7, 'dog': 0.6, 'cat': 0.3, 'bird': 0.2, 'horse': 1.6, 'chair': 0.9, 'couch': 0.85, 'bed': 0.6,
+    'table': 0.75, 'bench': 0.8, 'door': 2.0, 'door handle': 0.06, 'window': 1.2, 'elevator': 2.1, 'light switch': 0.09,
+    'toilet': 0.75, 'sink': 0.3, 'bathtub': 0.55, 'mirror': 0.6, 'lamp': 0.5, 'clock': 0.3, 'cupboard': 1.8, 'bin': 0.6,
+    'plant': 0.5, 'vase': 0.3, 'tv': 0.6, 'laptop': 0.25, 'remote': 0.18, 'cell phone': 0.15, 'headphones': 0.2,
+    'printer': 0.3, 'speaker': 0.25, 'refrigerator': 1.7, 'microwave': 0.3, 'oven': 0.9, 'toaster': 0.2, 'kettle': 0.25,
+    'bottle': 0.25, 'can': 0.12, 'cup': 0.1, 'bowl': 0.08, 'apple': 0.08, 'orange': 0.08, 'banana': 0.2, 'cake': 0.1,
+    'backpack': 0.45, 'handbag': 0.3, 'suitcase': 0.65, 'umbrella': 0.9, 'hat': 0.15, 'jacket': 0.7, 'shoe': 0.12,
+    'book': 0.22, 'teddy bear': 0.3, 'hair drier': 0.25, 'toothbrush': 0.19, 'pillow': 0.4, 'sports ball': 0.22,
+    'tennis racket': 0.68, 'traffic light': 0.4, 'stop sign': 0.75, 'fire hydrant': 0.8, 'car': 1.5, 'bus': 3.0,
+    'truck': 3.0, 'bicycle': 1.0, 'motorcycle': 1.1}
+
+
+def size_distance(box, label, fy, frame_h):
+    """Distance (m) guessed from how tall the box is, or None: no typical height, or the box is cut off by the frame."""
+    real = HEIGHTS_M.get(label)
+    if real is None or box[1] <= 2 or box[3] >= frame_h - 2:
+        return None
+    return fy * real / max(box[3] - box[1], 1)
 
 
 def depth_at(box, depth, scale):
@@ -97,7 +124,9 @@ class ObjectDetection(Node):
         param = lambda name, default: self.declare_parameter(name, default).value
         self.mode_name = param('mode_name', 'perception')
         self.search_time = param('search_time', 5.0)  # YOLO runs this long per search, then the last location is sent
-        self.confidence = param('confidence', 0.25)
+        # Lower than YOLO's usual 0.25: YOLO-World often scores real small objects 0.15-0.25, and the confirmation
+        # (confirm_frames sightings of the same object) already filters out one-off flukes.
+        self.confidence = param('confidence', 0.15)
         # YOLO's input width. At 640 a whole 1280 px frame loses half its detail, so with tiles on, every other frame
         # YOLO looks at one quarter of the frame instead, at full detail, for the same cost (~37 ms on the Jetson).
         # Each quarter gets a full-detail look about every 8 frames, which finds small or far objects.
@@ -111,20 +140,24 @@ class ObjectDetection(Node):
         self.track_gate = param('track_gate', 0.5)
         self.lost_after = param('lost_after', 1.0)
         self.target = None  # (x, y, z) of the object being followed
+        self.target_box = None  # its last box in pixels: while following it, YOLO looks at a crop around it
         self.target_seen = 0.0
+        self.history = collections.deque(maxlen=5)  # its last positions; the median is sent, so one bad frame doesn't matter
+        self.measured = True  # whether the last position came from the depth camera (False: guessed from its size)
 
         from ultralytics import YOLOWorld
         self.model = YOLOWorld(param('model_path', YOLO_MODEL))
-        self.vocabulary = list(VOCABULARY)
+        self.vocabulary = list(KNOWN)
         self.model.set_classes(self.vocabulary)
         # YOLO-World compares image regions with each word turned into numbers by a text model (CLIP). Keep the list's
         # numbers from launch: going back to them is instant, and a new word only needs its own numbers worked out.
-        self.list_features = self.model.model.txt_feats.clone()
+        self.list_features = self.model.model.txt_feats.clone()  # for every word in KNOWN
+        self.use_words(VOCABULARY)
         self.wanted = list(VOCABULARY)  # the list the goal needs; differs from vocabulary while a new word is learnt
         self.learning = False
         # Warm up: the first prediction sets up the GPU code (seconds on the Jetson). Do it now, not on the first search.
-        # Once for a whole frame and once for a quarter, as each shape gets its own setup.
-        for h, w in ((720, 1280), (396, 704)):
+        # Once for each shape YOLO is given (whole frame, quarter, crop around a target), as each gets its own setup.
+        for h, w in ((720, 1280), (396, 704), (360, 640)):
             self.model.predict(np.zeros((h, w, 3), np.uint8), imgsz=self.image_size, verbose=False)
         self.hits = 0  # sightings of the followed object
         self.look = 0  # counts YOLO looks: even = whole frame, odd = the next quarter
@@ -133,7 +166,7 @@ class ObjectDetection(Node):
         self.goal = ''
         self.started = None  # None when not searching
         self.last_point = None  # the followed object's last confirmed location in this search
-        self.depth_msg = None  # the newest depth image, only read once YOLO has a goal box
+        self.depth_msgs = collections.deque(maxlen=5)  # recent depth images, only read once YOLO has a goal box
         self.intrinsics = None  # fx, fy, cx, cy
 
         self.point_pub = self.create_publisher(PointStamped, param('object_mapping_topic', '/object_mapping'), 10)
@@ -160,10 +193,14 @@ class ObjectDetection(Node):
     def on_goal(self, msg):
         self.goal = normalise(msg.data.strip().lower())
         if self.goal:
-            # Any other word still works. Words inside it are left out, or 'chair' would win every 'armchair' box.
-            self.wanted = VOCABULARY if self.goal in VOCABULARY else [w for w in VOCABULARY if w not in self.goal] + [self.goal]
-            if self.goal in VOCABULARY and not self.learning:
-                self.use_words(VOCABULARY)  # instant: the list's numbers are kept from launch
+            if self.goal in VOCABULARY:
+                self.wanted = VOCABULARY
+            elif self.goal in WORN:
+                self.wanted = VOCABULARY + [self.goal]  # worn things only join the list while they are the goal
+            else:  # Any other word still works. Words inside it are left out, or 'chair' would win every 'armchair' box.
+                self.wanted = [w for w in VOCABULARY if w not in self.goal] + [self.goal]
+            if self.goal in KNOWN and not self.learning:
+                self.use_words(self.wanted)  # instant: these words' numbers are kept from launch
             elif self.wanted != self.vocabulary and not self.learning:
                 self.learning = True
                 threading.Thread(target=self.learn, daemon=True).start()
@@ -175,7 +212,7 @@ class ObjectDetection(Node):
         background and the node keeps answering; the search waits for it and its time starts once it's done."""
         while self.wanted != self.vocabulary:  # again if another goal came in meanwhile
             wanted = list(self.wanted)
-            if wanted[-1] not in VOCABULARY:
+            if wanted[-1] not in KNOWN:
                 self.get_logger().info(f"'{wanted[-1]}' isn't in the word list; adding it.")
             self.use_words(wanted)
         self.learning = False
@@ -187,8 +224,8 @@ class ObjectDetection(Node):
         if words == self.vocabulary:
             return
         import torch
-        parts = [self.list_features[:, [VOCABULARY.index(w) for w in words if w in VOCABULARY]]]
-        new = [w for w in words if w not in VOCABULARY]
+        parts = [self.list_features[:, [KNOWN.index(w) for w in words if w in KNOWN]]]
+        new = [w for w in words if w not in KNOWN]
         if new:
             parts.append(self.model.model.get_text_pe(new).to(self.list_features))
         world = self.model.model
@@ -201,7 +238,8 @@ class ObjectDetection(Node):
     def start_search(self):
         if not self.goal:
             return
-        self.started, self.last_point, self.hits, self.target, self.look = time.monotonic(), None, 0, None, 0
+        self.started, self.last_point, self.hits, self.target, self.target_box, self.look = time.monotonic(), None, 0, None, None, 0
+        self.history.clear()
         if not self.learning:
             self.get_logger().info(f'Looking for a {self.goal}.')
 
@@ -209,13 +247,18 @@ class ObjectDetection(Node):
         self.intrinsics = (msg.k[0], msg.k[4], msg.k[2], msg.k[5])
 
     def on_depth(self, msg):
-        self.depth_msg = msg  # kept as it is: read only once YOLO has a box, and then only inside it
+        self.depth_msgs.append(msg)  # kept as they are: read only once YOLO has a box, and then only inside it
+
+    def depth_for(self, stamp):
+        """The depth image taken closest in time to the colour frame, so the box lands on the right pixels when moving."""
+        t = stamp.sec + stamp.nanosec * 1e-9
+        return min(self.depth_msgs, key=lambda m: abs(m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 - t), default=None)
 
     def on_image(self, msg):
         if self.started is None or self.learning:
             return  # YOLO stays idle, or the word list is being changed
         frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-        point, boxes, chosen, region = self.locate(frame)
+        point, boxes, chosen, region = self.locate(frame, msg.header.stamp)
         self.publish_preview(frame, boxes, chosen, point, region)
         if point is not None and self.hits >= self.confirm_frames:
             point.header.stamp = msg.header.stamp
@@ -229,17 +272,27 @@ class ObjectDetection(Node):
             p = self.last_point.point
             self.point_pub.publish(self.last_point)
             self.status_pub.publish(String(data=f'found:{self.goal}'))
-            self.get_logger().info(f'Found the {self.goal}, last seen at x={p.x:.2f} m, y={p.y:.2f} m.')
+            guess = '' if self.measured else ' (no depth reading, distance guessed from its size)'
+            self.get_logger().info(f'Found the {self.goal}, last seen at x={p.x:.2f} m, y={p.y:.2f} m{guess}.')
         else:
             self.status_pub.publish(String(data=f'not_found:{self.goal}'))
             self.get_logger().info(f'No {self.goal} found in {self.search_time:g} s.')
         self.started = None
 
     def next_region(self, shape):
-        """(x1, y1, x2, y2) of the frame YOLO looks at next: the whole frame, then a quarter, alternately.
+        """(x1, y1, x2, y2) of the frame YOLO looks at next.
+        While following an object: a crop around it, at least 640x360 so at least full detail, so it is confirmed in a
+        few looks and its location is measured at full detail. Otherwise the whole frame, then a quarter, alternately.
         A quarter runs from one corner of the frame to a random point just past the middle (within tile_reach of it),
         so the four always cover the frame but their borders move, and an object on a border isn't always split."""
         h, w = shape[:2]
+        if self.target_box is not None and time.monotonic() - self.target_seen <= self.lost_after:
+            x1, y1, x2, y2 = self.target_box
+            cw = min(w, max(640, 3 * (x2 - x1), 3 * (y2 - y1) * 16 / 9))
+            ch = min(h, cw * 9 / 16)
+            cx = min(max((x1 + x2) / 2, cw / 2), w - cw / 2)
+            cy = min(max((y1 + y2) / 2, ch / 2), h - ch / 2)
+            return int(cx - cw / 2), int(cy - ch / 2), int(cx + cw / 2), int(cy + ch / 2)
         self.look += 1
         if not self.tiles or self.look % 2:
             return 0, 0, w, h
@@ -251,7 +304,7 @@ class ObjectDetection(Node):
         y1, y2 = (0, h / 2 + dy) if corner in (0, 1) else (h / 2 - dy, h)
         return int(x1), int(y1), int(x2), int(y2)
 
-    def locate(self, frame):
+    def locate(self, frame, stamp):
         """(PointStamped of the followed object or None, goal boxes as (xyxy, conf), the chosen box, the region looked at).
         YOLO runs first; depth is only read when it has found the goal, and then only inside the boxes."""
         region = self.next_region(frame.shape)
@@ -261,41 +314,52 @@ class ObjectDetection(Node):
         boxes = sorted((([b[0] + x0, b[1] + y0, b[2] + x0, b[3] + y0], p)  # back to whole-frame pixels
                         for b, p, c in zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
                         if int(c) == goal), key=lambda b: -b[1])  # the goal only; other words just compete
+        if not boxes:
+            return None, boxes, None, region  # a look that missed it (e.g. another quarter) doesn't undo the sightings
+        if self.intrinsics is None:
+            self.get_logger().warn('Waiting for the camera info.', throttle_duration_sec=5.0)
+            return None, boxes, None, region
 
-        candidates = []  # (position, box) of every goal detection with a depth reading
-        if boxes:
-            if self.depth_msg is None or self.intrinsics is None:
-                self.get_logger().warn('Waiting for the depth image and camera info.', throttle_duration_sec=5.0)
-                return None, boxes, None, region
-            depth = self.bridge.imgmsg_to_cv2(self.depth_msg, 'passthrough')  # a view of the message, nothing converted yet
+        depth, scale = None, 1.0
+        depth_msg = self.depth_for(stamp)
+        if depth_msg is not None:
+            depth = self.bridge.imgmsg_to_cv2(depth_msg, 'passthrough')  # a view of the message, nothing converted yet
             if depth.shape[:2] != frame.shape[:2]:
                 self.get_logger().warn('Depth is not aligned to colour; turn on depth registration in the camera driver.', throttle_duration_sec=5.0)
-                return None, boxes, None, region
-            scale = 0.001 if self.depth_msg.encoding == '16UC1' else 1.0  # 16UC1 is mm, 32FC1 m
-            fx, fy, cx, cy = self.intrinsics
+                depth = None
+            scale = 0.001 if depth_msg.encoding == '16UC1' else 1.0  # 16UC1 is mm, 32FC1 m
+        fx, fy, cx, cy = self.intrinsics
+        candidates = []  # (position, box, measured) of every goal detection whose distance is known or can be guessed
         for box, _ in boxes:
-            z = depth_at(box, depth, scale)
+            z = depth_at(box, depth, scale) if depth is not None else None
+            measured = z is not None
+            if z is None:
+                z = size_distance(box, self.goal, fy, frame.shape[0])  # no depth reading: guess from its size
             if z is not None:
                 u, v = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
-                candidates.append((np.array([z, -(u - cx) * z / fx, -(v - cy) * z / fy]), box))  # optical frame to x forward, y left, z up
+                candidates.append((np.array([z, -(u - cx) * z / fx, -(v - cy) * z / fy]), box, measured))  # optical frame to x forward, y left, z up
 
         now = time.monotonic()
         if self.target is not None and now - self.target_seen > self.lost_after:
-            self.target = None  # lost it: pick again
+            self.target, self.target_box = None, None  # lost it: pick again
+            self.history.clear()
         if self.target is None:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0]), default=None)  # the closest one
             self.hits = 0
         else:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0] - self.target), default=None)  # the same one as before
-            if pick is not None and np.linalg.norm(pick[0] - self.target) > self.track_gate:
+            gate = max(self.track_gate, 0.2 * self.target[0])  # guessed distances wobble more the further away
+            if pick is not None and np.linalg.norm(pick[0] - self.target) > gate:
                 pick = None  # only other objects in view: don't swap to them
         if pick is None:
-            return None, boxes, None, region  # a look that missed it (e.g. another quarter) doesn't undo the sightings
+            return None, boxes, None, region
 
-        self.target, self.target_seen, self.hits = pick[0], now, self.hits + 1
+        self.target, self.target_box, self.target_seen, self.hits = pick[0], pick[1], now, self.hits + 1
+        self.history.append(pick[0])
         point = PointStamped()
         point.header.frame_id = self.frame_id
-        point.point.x, point.point.y, point.point.z = (float(c) for c in pick[0])
+        point.point.x, point.point.y, point.point.z = (float(c) for c in np.median(self.history, axis=0))
+        self.measured = pick[2]
         return point, boxes, pick[1], region
 
     def publish_preview(self, frame, boxes, chosen, point, region):
@@ -308,7 +372,8 @@ class ObjectDetection(Node):
         for box, conf in boxes:
             x1, y1, x2, y2 = (int(c * scale) for c in box)
             is_chosen = box is chosen
-            label = f'{self.goal} {point.point.x:.1f} m' if is_chosen else f'{self.goal} {conf:.2f}'
+            label = (f"{self.goal} {'' if self.measured else '~'}{point.point.x:.1f} m"  # ~ = guessed from its size
+                     if is_chosen else f'{self.goal} {conf:.2f}')
             colour = (0, 200, 0) if is_chosen else (160, 160, 160)
             cv2.rectangle(image, (x1, y1), (x2, y2), colour, 2)
             cv2.putText(image, label, (x1, max(y1 - 6, 14)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 2)
