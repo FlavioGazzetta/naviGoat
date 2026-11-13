@@ -40,8 +40,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         prompt = parse_qs(urlparse(self.path).query).get('prompt', [''])[0]
         audio = np.frombuffer(self.rfile.read(int(self.headers['Content-Length'])), dtype='<f4').astype(np.float32)
+        # temperature=0: no retries with more randomness, which took 10 s on unclear audio and does not help here
         result = whisper.transcribe(self.model, audio, language='en', fp16=True, condition_on_previous_text=False,
-                                    initial_prompt=prompt or None)
+                                    temperature=0.0, initial_prompt=prompt or None)
         self._reply({'segments': [{'text': s['text'], 'no_speech_prob': s['no_speech_prob'], 'avg_logprob': s['avg_logprob']}
                                   for s in result['segments']]})
 

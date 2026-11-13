@@ -106,6 +106,14 @@ class Speaker:
                 return self._kokoro() if re.match(r'^[ab][mf]_', self.voice) else self._piper()
             except Exception as error:
                 print(f'Piper voice {self.voice} not available ({error}); using the system voice.', file=sys.stderr)
+        if sys.platform != 'win32' and shutil.which('espeak-ng') and shutil.which('paplay'):
+            # pyttsx3 plays straight to the sound card, which fails ("Device or resource busy") when PipeWire holds it.
+            def speak(text):
+                tts = subprocess.Popen(['espeak-ng', '--stdout', text], stdout=subprocess.PIPE)
+                subprocess.run(['paplay'], stdin=tts.stdout, check=False)
+                tts.stdout.close()
+                tts.wait()
+            return speak
         try:
             import pyttsx3
             pyttsx3.init()  # fail here, not on the first reply, if there is no voice
@@ -139,41 +147,99 @@ class Speaker:
                 self.until = time.monotonic()
 
 
-def utterances(device, muted, min_rms, silence_s, max_s, min_s=0.4):
+class SileroVAD:
+    """How likely a 32 ms block of 16 kHz audio is speech, from the Silero VAD model that ships with faster-whisper.
+
+    It runs on the CPU in about a millisecond a block. Unlike a loudness rule it ignores steady noise, a tap on the
+    microphone and breathing, and it still hears quiet speech."""
+
+    def __init__(self):
+        import faster_whisper
+        import onnxruntime
+        path = next((Path(faster_whisper.__file__).parent / 'assets').glob('silero_vad*.onnx'))
+        options = onnxruntime.SessionOptions()
+        options.inter_op_num_threads = options.intra_op_num_threads = 1
+        options.log_severity_level = 4
+        self.session = onnxruntime.InferenceSession(str(path), providers=['CPUExecutionProvider'], sess_options=options)
+        if not {'input', 'h', 'c'} <= {i.name for i in self.session.get_inputs()}:
+            raise RuntimeError(f'{path.name} has an interface this code does not know')
+        self.reset()
+
+    def reset(self):
+        self.h = np.zeros((1, 1, 128), 'float32')
+        self.c = np.zeros((1, 1, 128), 'float32')
+        self.context = np.zeros((1, 64), 'float32')  # the model also wants the last 64 samples of the block before
+
+    def __call__(self, block):
+        x = np.concatenate([self.context, block.reshape(1, -1)], axis=1)
+        out, self.h, self.c = self.session.run(None, {'input': x, 'h': self.h, 'c': self.c})
+        self.context = x[:, -64:]
+        return float(out.reshape(-1)[0])
+
+
+def utterances(device, muted, min_rms, silence_s, max_s, min_s=0.4, vad='silero', short_s=0.8, short_silence_s=1.0):
     """Yield one float32 array per spoken phrase.
 
-    A block counts as speech when it is clearly louder than the background level, which
-    is tracked while nobody is talking. A phrase ends after `silence_s` of quiet.
+    vad='silero' decides what is speech with the Silero model: a phrase starts after two speech blocks in a row (64 ms)
+    and keeps going while the probability stays above a lower bar, so a pause between words does not end it.
+    vad='energy' is the old rule: a block is speech when it is clearly louder than the background level, which is
+    tracked while nobody is talking (min_rms is its floor).
+
+    A phrase ends after `silence_s` of quiet. When there has been less than `short_s` of speech so far (a bare "Pete,"
+    before the request), it waits `short_silence_s` instead, so the request that follows is not cut off into a second
+    phrase. The quiet at the end is trimmed off, apart from a short margin.
     """
+    detector = None
+    if vad == 'silero':
+        try:
+            detector = SileroVAD()
+        except Exception as error:
+            print(f'Silero VAD not available ({error}); using the loudness rule.', file=sys.stderr)
     blocks = queue.Queue()
     stream = sd.InputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK, channels=1, dtype='float32', device=device,
                             callback=lambda indata, frames, time_info, status: blocks.put(indata[:, 0].copy()))
-    preroll = deque(maxlen=8)  # keeps the start of a word that crossed the threshold late
-    active, silent, floor = [], 0, 0.005
+    preroll = deque(maxlen=10)  # keeps the start of a word that was only recognised a moment after it began
+    active, silent, voiced, last_voiced, run, floor = [], 0, 0, 0, 0, 0.005
     seconds = lambda count: count * BLOCK / SAMPLE_RATE
+    margin = 6  # blocks kept after the last speech, about 0.2 s
+
+    def forget():
+        nonlocal active, silent, voiced, last_voiced, run
+        active, silent, voiced, last_voiced, run = [], 0, 0, 0, 0
+        preroll.clear()
+        if detector:
+            detector.reset()
 
     with stream:
         while True:
             block = blocks.get()
             if muted():  # the robot is talking: don't listen to ourselves
-                active, silent = [], 0
-                preroll.clear()
+                forget()
                 continue
             rms = float(np.sqrt(np.mean(block ** 2)))
-            loud = rms > max(min_rms, floor * 3)
+            if detector:
+                probability = detector(block)
+                starts, keeps = probability >= 0.5, probability >= 0.35
+            else:
+                starts = keeps = rms > max(min_rms, floor * 3)
             if not active:
-                if loud:
-                    active, silent = list(preroll) + [block], 0
-                else:
+                preroll.append(block)
+                run = run + 1 if starts else 0
+                if not starts and not detector:
                     floor = 0.95 * floor + 0.05 * rms
-                    preroll.append(block)
+                if run >= (2 if detector else 1):
+                    active, silent, voiced, last_voiced = list(preroll), 0, run, len(preroll)
                 continue
             active.append(block)
-            silent = 0 if loud else silent + 1
-            if seconds(silent) >= silence_s or seconds(len(active)) >= max_s:
+            if keeps:
+                silent, voiced, last_voiced = 0, voiced + 1, len(active)
+            else:
+                silent += 1
+            needed = short_silence_s if seconds(voiced) < short_s else silence_s
+            if seconds(silent) >= needed or seconds(len(active)) >= max_s:
                 if seconds(len(active) - silent) >= min_s:
-                    yield np.concatenate(active)
-                active, silent = [], 0
+                    yield np.concatenate(active[:last_voiced + margin])
+                forget()
 
 
 class RemoteWhisper:
@@ -200,8 +266,18 @@ def load_model(args):
     return WhisperModel(args.model, device='auto', compute_type='default')
 
 
-def transcribe(model, audio):
-    segments, _ = model.transcribe(audio, language='en', beam_size=1, vad_filter=True, initial_prompt=PROMPT,
+def load_prompt():
+    """The hint for Whisper: our unusual place names from core/catalog.py, or the built-in one if that cannot be found."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'core'))
+        import catalog
+        return catalog.speech_prompt()
+    except Exception:
+        return PROMPT
+
+
+def transcribe(model, audio, prompt=PROMPT):
+    segments, _ = model.transcribe(audio, language='en', beam_size=1, vad_filter=True, initial_prompt=prompt,
                                    condition_on_previous_text=False)
     parts = [s.text.strip() for s in segments if s.no_speech_prob < 0.6 and s.avg_logprob > -1.0]
     text = ' '.join(parts).strip()
@@ -230,13 +306,15 @@ class Voice:
 
     def listen(self):
         model = load_model(self.args)
+        prompt = load_prompt()
 
         def muted():
             return self.speaker.busy() or time.monotonic() < self.speaker.until + 0.5
 
         print("Listening. Say 'Pete, ...'" if self.args.wake_word else 'Listening.')
-        for audio in utterances(self.args.device, muted, self.args.min_rms, self.args.silence, self.args.max_phrase):
-            text = transcribe(model, audio)
+        for audio in utterances(self.args.device, muted, self.args.min_rms, self.args.silence, self.args.max_phrase,
+                               vad=self.args.vad, short_s=self.args.short_phrase, short_silence_s=self.args.short_silence):
+            text = transcribe(model, audio, prompt)
             if not text:
                 continue
             if self.addressed(text):
@@ -296,6 +374,9 @@ if __name__ == '__main__':
     parser.add_argument('--follow-up', type=float, default=6.0, help='seconds after a reply in which no wake word is needed')
     parser.add_argument('--min-rms', type=float, default=0.01, help='minimum loudness that counts as speech; raise it in noisy rooms')
     parser.add_argument('--silence', type=float, default=0.8, help='seconds of quiet that end a phrase')
+    parser.add_argument('--vad', choices=('silero', 'energy'), default='silero', help='how speech is told from quiet: the Silero model, or the loudness rule (--min-rms)')
+    parser.add_argument('--short-phrase', type=float, default=0.8, help='speech shorter than this (seconds) is probably a bare "Pete": wait --short-silence before ending it')
+    parser.add_argument('--short-silence', type=float, default=1.0, help='seconds of quiet that end a very short phrase')
     parser.add_argument('--max-phrase', type=float, default=15.0, help='longest phrase in seconds')
     args, _ = parser.parse_known_args()  # leave --ros-args for ROS
     if args.list_devices:

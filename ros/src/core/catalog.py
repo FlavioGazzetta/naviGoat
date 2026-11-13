@@ -17,7 +17,7 @@ LOCATIONS = [
     'sherfield building', 'huxley building', 'blackett laboratory', 'skempton building', 'bessemer building',
     'roderic hill building', 'royal school of mines', 'city and guilds building', 'electrical engineering building',
     'dyson building', 'sir alexander fleming building', 'william penney laboratory', 'business school',
-    '170 queen\'s gate', 'central library', 'imperial college union', 'beit quad', 'ethos sports centre',
+    '170 queen\'s gate', 'abdus salam library', 'imperial college union', 'beit quad', 'ethos sports centre',
     'garden hall', 'weeks hall', 'dangoor plaza', "queen's tower",
     # food and drink
     'pret', 'library cafe', 'rasa kitchen', 'bakery', 'college cafe', 'fuel']
@@ -33,9 +33,11 @@ LOCATION_ALIASES = {
     'electrical engineering': 'electrical engineering building', 'eee': 'electrical engineering building', 'triple e': 'electrical engineering building', 'eee building': 'electrical engineering building', 'triple e building': 'electrical engineering building',
     'dyson': 'dyson building', 'fleming': 'sir alexander fleming building',
     'alexander fleming building': 'sir alexander fleming building', 'penney': 'william penney laboratory', 'penney lab': 'william penney laboratory',
-    '170 queens gate': '170 queen\'s gate', 'library': 'central library', 'union': 'imperial college union',
+    '170 queens gate': '170 queen\'s gate', 'library': 'abdus salam library', 'central library': 'abdus salam library', 'abdus salam': 'abdus salam library',
+    'salam library': 'abdus salam library', 'abdul salam library': 'abdus salam library', 'abdul salam': 'abdus salam library', 'union': 'imperial college union',
     'beit quadrangle': 'beit quad', 'ethos': 'ethos sports centre', 'queens tower': "queen's tower",
-    'pret a manger': 'pret'}
+    'pret a manger': 'pret', 'press': 'pret', 'prett': 'pret', 'prit': 'pret',
+    'abdu salam library': 'abdus salam library', 'abdu salam': 'abdus salam library'}
 
 # Objects the detector looks for: a copy of VOCABULARY, WORN and ALIASES in ros/src/autonomy/perception/object_detection.py.
 # That file imports ROS and OpenCV, so it cannot be imported here. When its lists change, copy them again.
@@ -87,3 +89,27 @@ OBJECT_ALIASES = {
 GUIDE_TO_LOCATION = {'toilet': 'bathroom'}
 # If Pete cannot find the object while guiding, try this stored location instead.
 OBJECT_FALLBACK_LOCATIONS = {'toilet': 'bathroom', 'door': 'exit', 'refrigerator': 'kitchen', 'sink': 'kitchen'}
+
+
+# Names speech to text tends to get wrong, given to Whisper as a hint ("Abdu-Salam" becomes Abdus Salam, "press" becomes Pret).
+# Only names that are not ordinary English words belong here: a hint full of ordinary words (chair, teddy bear) makes
+# Whisper hear them where nobody said them. Whisper keeps only the last ~220 tokens of a hint.
+SPEECH_HINT = [
+    'Abdus Salam Library', 'Pret', 'Skempton Building', 'Bessemer Building', 'Sherfield Building', 'Huxley Building',
+    'Blackett Laboratory', 'Roderic Hill Building', 'William Penney Laboratory', 'Sir Alexander Fleming Building',
+    'Dangoor Plaza', 'Beit Quad', 'Rasa Kitchen', 'Triple E']
+
+
+def speech_prompt():
+    return 'Pete, follow me. Pete, stop. Pete, take me to the ' + ', '.join(SPEECH_HINT) + '.'
+
+
+# What a place is for, shown to Qwen next to the name so a need ("I'm hungry", "I have to study") can be matched to a
+# place. Only places where the purpose is not in the name.
+LOCATION_DESCRIPTIONS = {
+    'bathroom': 'toilet', 'exit': 'leave the building, go outside', 'entrance': 'the way in', 'reception': 'ask someone for help',
+    'pret': 'coffee, sandwiches, quick food', 'rasa kitchen': 'hot lunch, Malaysian food', 'library cafe': 'coffee and snacks in the library',
+    'bakery': 'pastries, bread, snacks', 'college cafe': 'coffee and snacks', 'fuel': 'salads, healthy food', 'canteen': 'food',
+    'cafe': 'coffee, food', 'abdus salam library': 'books, studying, quiet work', 'study room': 'studying, quiet work',
+    'ethos sports centre': 'gym, sport, exercise, swimming', 'prayer room': 'prayer, a quiet place', 'imperial college union': 'student union, societies, bar',
+    'computer room': 'computers, printing', 'lecture theatre': 'lectures', 'laboratory': 'practical work'}

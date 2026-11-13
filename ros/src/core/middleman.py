@@ -15,7 +15,8 @@ Following and manual mode have no goal, so they only end when the user says stop
 
 "Where is X" / "find X" is not handled for now (a spoken reply says so). Everything else is about what the camera
 sees ("what's in front of me", "is the light on?") and is not the middleman's job: the text goes straight to perception over ROS (see middleman_node.py) and the
-mode is unchanged. An unknown place or object gets a spoken reply ("Unknown location: X.").
+mode is unchanged. A place or object that is not in catalog.py gets a spoken reply ("I don't know where the piano is.");
+perception is only asked about objects in the list, so "I couldn't find the chair." means it looked and did not see one.
 
 Every Decision has a reply: what Pete says out loud, which is also the confirmation that the request was heard.
 When there is no reply because the text goes to perception, which answers later, on_ack() is called so the user hears
@@ -42,7 +43,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from catalog import GUIDE_TO_LOCATION, LOCATION_ALIASES, LOCATIONS, OBJECT_ALIASES, OBJECT_FALLBACK_LOCATIONS, OBJECTS
+from catalog import (GUIDE_TO_LOCATION, LOCATION_ALIASES, LOCATION_DESCRIPTIONS, LOCATIONS, OBJECT_ALIASES,
+                     OBJECT_FALLBACK_LOCATIONS, OBJECTS)
 
 
 class Mode(Enum):
@@ -77,7 +79,7 @@ _GPS = re.compile(r"\bgps\b")
 _GPS_TARGET = re.compile(r"\bgps\b.*?\b(to|towards)\b(?P<target>.*)")
 # Pete follows another person; the user follows Pete. Users are not expected to say "follow me".
 _FOLLOW = re.compile(r"\bfollow(ing)?\b")
-_FOLLOW_NAME = re.compile(r"\bfollow(ing)? (?!(me|him|her|them|us|that|this|the|a|my|it)\b)(?P<target>[a-z]+)")
+_FOLLOW_NAME = re.compile(r"\bfollow(ing)? (?!(me|him|her|them|us|that|this|the|a|my|it|follow|following|please|now|again|too)\b)(?P<target>[a-z]+)")
 _GUIDE = re.compile(r"\b(bring|take|lead|guide|walk|go|get|navigate|head)( me)? (to|towards)\b(?P<target>.*)")
 _FOLLOW_TO = re.compile(r"\b(follow(ing)?|(come|walk|stay) with me)\b.*?\b(to|towards)\b(?P<target>.*)")
 _GO_HOME = re.compile(r"\b(bring|take|lead|guide|walk|go|get)( me)? (?P<target>home)\b")
@@ -105,21 +107,13 @@ QWEN_SCHEMA = {'type': 'object', 'properties': {'mode': {'enum': list(QWEN_MODES
 CONFIDENCE_THRESHOLD = 0.7
 # How close a mis-heard word must be to a stored name to count as it ("bathrom" -> bathroom). difflib ratio.
 SPELLING_CUTOFF = 0.85
-QWEN_PROMPT = """You turn what a blind person says to Pete, their guide robot, into one command.
-
-mode is one of:
-- follow: Pete follows ANOTHER person ("follow Alice", "follow that person"). target is the name, or "" for the person in front.- location: take them to a stored place. Places: {locations}
-- object: take them to a stored object. Objects: {objects}
-- gps: ONLY if they say "GPS" ("GPS take me to 12 Main Street"). target is the address or place.
-- manual: they want to drive the robot themselves with the stick ("manual mode", "let me drive")
-- perception: describing the scene or a question about what can be seen ("what's around me", "is the light on")
-- stop: stop, cancel, never mind
-- help: they are hurt, lost or in danger
-- unknown: anything else
-
-target is the place or object they want to go to, as they said it in a few lowercase words, or "" if there is none.
-match is the ONE entry from the lists above that means the same thing or is the closest category ("sofa" -> couch, "loo" -> bathroom, "mug" -> cup, "canteen" -> kitchen). Use "" if nothing in the lists fits.
-confidence is 0 to 1: how sure you are that match is what they want. Use a low number if you are guessing."""
+QWEN_PROMPT = """You help Pete, a guide robot at Imperial College London, work out where a person who cannot see wants to go.
+They say what they need. Choose the ONE place or object below that meets the need, or "" if none does.
+Places: {locations}
+Objects: {objects}
+Examples: "I'm hungry" -> pret. "I have to study" -> abdus salam library. "I want to work out" -> ethos sports centre. "I need to pray" -> prayer room. "I need to print something" -> computer room.
+Answer with a name exactly as written in the lists, without the brackets. If what they ask for is not in the lists, answer "". A particular named place or person that is not listed (for example someone's office) is not a match: answer "".
+confidence is 0 to 1: how sure you are. Use a low number if you are guessing."""
 
 
 def normalise(text):
@@ -127,12 +121,16 @@ def normalise(text):
     return ' '.join(text.split())
 
 
+_GREETING = re.compile(r"^((hello|hi|hey|ok|okay|yo)\b[ ,]*)+")
+
+
 def strip_wake_word(text, require):
-    """Return the text after the wake word, or None if a wake word is required and missing."""
+    """Return the request next to the wake word (after it, or before it: "take me to the bathroom, Pete"), or None
+    if a wake word is required and missing."""
     for word in WAKE_WORDS:  # longest first
         match = re.search(rf'\b{word}\b', text)
         if match:
-            return text[match.end():].strip()
+            return text[match.end():].strip() or _GREETING.sub('', text[:match.start()]).strip()
     return None if require else text
 
 
@@ -165,12 +163,9 @@ def as_object(target):
     return target if target in OBJECTS else close_to(target, OBJECTS)
 
 
-def say_unknown(target, hint=None):
-    if hint == 'location':
-        return f'Unknown location: {target}.'
-    if hint == 'object':
-        return f'Unknown object: {target}.'
-    return f'Unknown: {target}.'
+def say_unknown(target):
+    article = '' if target in SAVED_NAMES or re.search(r'\d', target) else 'the '  # "where home is", "where 12 main street is"
+    return f"I don't know where {article}{target} is."
 
 
 def resolve_known(target, text, locations, saved):
@@ -197,7 +192,7 @@ def resolve(target, text, locations, saved, hint=None, match='', confidence=0.0)
     match = clean_target(normalise(match or ''))
     if match and confidence >= CONFIDENCE_THRESHOLD and (decision := resolve_known(match, text, locations, saved)):
         return decision
-    return Decision(None, text=text, reply=say_unknown(target, hint))
+    return Decision(None, text=text, reply=say_unknown(target))
 
 
 def gps_decision(target, text):
@@ -242,13 +237,18 @@ def decision_from_mode(mode, target, text, locations, saved, match='', confidenc
 
 
 def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN_MODEL, timeout=10):
-    """A function that asks the local Qwen what a request means: Decision, or None if it is slow, unreachable or unsure."""
+    """A function that asks the local Qwen which stored place or object meets a need ("I'm hungry" -> pret): a Decision,
+    or None if it is slow, unreachable or not sure. It can only answer with a name from the lists, so it cannot start
+    follow, manual or any other mode: those stay with the rules."""
     saved = saved or {}
-    prompt = QWEN_PROMPT.format(locations=', '.join(locations), objects=', '.join(OBJECTS))
+    places = ', '.join(f'{p} ({LOCATION_DESCRIPTIONS[p]})' if p in LOCATION_DESCRIPTIONS else p for p in locations)
+    prompt = QWEN_PROMPT.format(locations=places, objects=', '.join(OBJECTS))
+    names = list(dict.fromkeys(list(locations) + list(OBJECTS))) + ['']
+    schema = {'type': 'object', 'properties': {'match': {'enum': names}, 'confidence': {'type': 'number'}}, 'required': ['match', 'confidence']}
 
-    def interpret(text):
+    def interpret(text, minimum=CONFIDENCE_THRESHOLD):
         messages = [{'role': 'system', 'content': prompt}, {'role': 'user', 'content': text}]
-        body = {'model': model, 'stream': False, 'keep_alive': -1, 'format': QWEN_SCHEMA, 'options': {'num_predict': 60, 'temperature': 0}, 'messages': messages}
+        body = {'model': model, 'stream': False, 'keep_alive': -1, 'format': schema, 'options': {'num_predict': 40, 'temperature': 0}, 'messages': messages}
         try:
             request = urllib.request.Request(url, json.dumps(body).encode(), {'Content-Type': 'application/json'})
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -259,7 +259,10 @@ def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN
             confidence = float(result.get('confidence') or 0)
         except (TypeError, ValueError):
             confidence = 0.0
-        return decision_from_mode(result.get('mode'), result.get('target'), text, locations, saved, result.get('match'), confidence)
+        match = result.get('match') or ''
+        if not match or confidence < minimum:
+            return None
+        return resolve_known(match, text, locations, saved)
 
     interpret.warm_up = lambda: warm_up_qwen(url, model)
     return interpret
@@ -286,9 +289,12 @@ def find_target(text, patterns):
     return None
 
 
-def classify(text, locations=LOCATIONS, require_wake_word=False, saved=None, interpreter=None):
-    """Turn one spoken request into a Decision. None if there is nothing to act on.
-    interpreter is an optional function (see qwen_interpreter) that reads what the rules leave to it."""
+# Something the person needs, as opposed to a question about what the camera sees.
+_NEED = re.compile(r"\b(i'd like|i would like|i need|i want|somewhere to|i'm (thirsty|hungry)|i am (thirsty|hungry))\b")
+
+
+def classify_by_rules(text, locations=LOCATIONS, require_wake_word=False, saved=None):
+    """Turn one spoken request into a Decision with the rules alone. None if there is nothing to act on."""
     saved = saved or {}
     text = strip_wake_word(normalise(text), require_wake_word)
     if not text:
@@ -303,8 +309,6 @@ def classify(text, locations=LOCATIONS, require_wake_word=False, saved=None, int
         return manual_decision(text)
     if _FIND.search(text) and not (_GUIDE.search(text) or _NEED_PLACE.search(text) or _GPS.search(text)):
         return Decision(None, text=text, reply="Can't look for things.")
-    if interpreter and (decision := interpreter(text)):
-        return decision
     if _GPS.search(text):
         match = _GPS_TARGET.search(text)
         return gps_decision(clean_target(match.group('target')) if match else '', text)
@@ -321,6 +325,27 @@ def classify(text, locations=LOCATIONS, require_wake_word=False, saved=None, int
     if _SCENE.search(text):
         return to_perception(text)
     return Decision(None, text=text, reply="Say that again.")
+
+
+def classify(text, locations=LOCATIONS, require_wake_word=False, saved=None, interpreter=None):
+    """Turn one spoken request into a Decision. None if there is nothing to act on.
+
+    The rules decide first: a stop, help or "take me to the bathroom" never waits for the language model. Only when the
+    rules do not understand ("Say that again") or the place is not one they know, interpreter (see qwen_interpreter)
+    is asked whether the request is a need that one of the stored places meets ("I'm hungry")."""
+    decision = classify_by_rules(text, locations, require_wake_word, saved)
+    if interpreter and decision is not None and decision.mode is None:
+        request = strip_wake_word(normalise(text), require_wake_word)
+        # A single unfamiliar word is nearly always a mis-heard name ("prud" for Pret), not a description: it gets the honest
+        # refusal, not a guess by meaning (it was taken for the prayer room).
+        unknown_place = decision.reply.startswith("I don't know where") and len((request or '').split()) >= 5
+        not_understood = decision.reply == 'Say that again.' or unknown_place
+        a_need = decision.forward and _NEED.search(request or '')  # "I want a coffee" is sent on to perception, which can only describe
+        # Asked for a named place that is not stored ("the dean's office"): only a very sure answer may replace the refusal.
+        sure = 0.9 if decision.reply.startswith("I don't know where") else CONFIDENCE_THRESHOLD
+        if request and (not_understood or a_need) and (guess := interpreter(request, sure)):
+            return guess
+    return decision
 
 
 # What Pete says when the user ends the mode they are in.
