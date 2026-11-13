@@ -20,6 +20,7 @@ def generate_launch_description():
         DeclareLaunchArgument('whisper_url', default_value='http://127.0.0.1:8765'),
         DeclareLaunchArgument('listen', default_value='true'),
         DeclareLaunchArgument('device', default_value='pulse'),
+        DeclareLaunchArgument('silence', default_value='1.0'),  # seconds of quiet that end a spoken phrase
 
         # camera, scene description, then object detection once Qwen has loaded
         IncludeLaunchDescription(launch_file('autonomy', 'perception', 'launch', 'perception.launch.py'),
@@ -27,7 +28,7 @@ def generate_launch_description():
         # the voice launch starts the middleman itself, so only one of these two runs
         IncludeLaunchDescription(launch_file('interaction', 'voice', 'launch', 'voice.launch.py'), condition=IfCondition(arg('voice')),
                                  launch_arguments={'use_qwen': arg('use_qwen'), 'whisper_url': arg('whisper_url'),
-                                                   'listen': arg('listen'), 'device': arg('device')}.items()),
+                                                   'listen': arg('listen'), 'device': arg('device'), 'silence': arg('silence')}.items()),
         IncludeLaunchDescription(launch_file('core', 'launch', 'middleman.launch.py'), condition=UnlessCondition(arg('voice')),
                                  launch_arguments={'use_qwen': arg('use_qwen')}.items()),
     ])
