@@ -2,9 +2,10 @@
 # Connect the AirPods, route audio to them, keep the voice link open and run the listener.
 # Copy to ~/start_voice.sh on the Jetson. Extra arguments go to listen_controller.py, e.g. --no-speak or --qwen.
 #
-# The AirPods' address is set below (or AIRPODS=aa:bb:... ~/start_voice.sh). They must be out of the case, and not
+# The headset's address is set below, now the G21 Pro earphones (or AIRPODS=aa:bb:... ~/start_voice.sh, e.g. the AirPods
+# at E4:76:84:52:6E:61). The variable keeps its old name. The headset must be out of its case, and not
 # connected to a laptop or phone.
-AIRPODS=${AIRPODS:-E4:76:84:52:6E:61}
+AIRPODS=${AIRPODS:-24:DF:17:09:22:83}
 ID=${AIRPODS//:/_}
 SINK=bluez_output.$ID.1
 SRC=bluez_input.$ID.0

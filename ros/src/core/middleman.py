@@ -90,8 +90,12 @@ _TWO_STEPS = re.compile(r"\b(and then|then)\b")
 # "Where is X" / "find X" is answered by taking the user to X, the same as "take me to X".
 _FIND = re.compile(r"\b(where's|where is|where are|find|locate|look for|is there|do you see|i lost|i've lost|i misplaced|i'm looking for)\b|^where\b")
 _FIND_TARGET = re.compile(r"\b(where's|where is|where are|find|locate|look for|is there|do you see|i lost|i've lost|i misplaced|i'm looking for)\b(?P<target>.*)")
+# The questions perception can answer: it only describes the whole view. These are answered at once with DESCRIBING_REPLY.
+DESCRIBE = re.compile(r"\b(what's|what is|whats|describe)\b.*\b(in front|ahead|around|nearby|near me|happening|room|scene|scenery|surroundings)\b|\bwhat (do|can) you see\b"
+                      r"|\bdescribe\b|\bwhere am i\b|\blook around\b")
+DESCRIBING_REPLY = 'Describing the scene.'
 # Anything about what is around or in view goes to perception.
-_SCENE = re.compile(r"\b(what's|what is|whats|describe|what (do|can) you see|i'd like|i would like|i need|i want|somewhere to|i'm thirsty|i am thirsty)\b|^(what|who|which|is|are|do|does|can|how)\b")
+_SCENE =re.compile(r"\b(what's|what is|whats|describe|what (do|can) you see|i'd like|i would like|i need|i want|somewhere to|i'm thirsty|i am thirsty)\b|^(what|who|which|is|are|do|does|can|how)\b")
 _FILLER = re.compile(r"^(the|a|an|my|any|nearest|closest) | (please|in front of me|around me|here|in the room|nearby|near me|close by)$")
 # Questions about where the user is or what is around: the scene description answers them.
 _LOOK = re.compile(r"\bwhere am i\b|\blook around\b|\bdescribe\b|\bwhat (do|can) you see\b|\bwhat'?s around\b")
@@ -224,7 +228,8 @@ def manual_decision(text):
 
 
 def to_perception(text):
-    return Decision(None, text=text, forward=text)
+    """Send the question to perception. A scene description takes a few seconds, so Pete says he is doing it straight away."""
+    return Decision(None, text=text, forward=text, reply=DESCRIBING_REPLY if DESCRIBE.search(text) else '')
 
 
 def decision_from_mode(mode, target, text, locations, saved, match='', confidence=0.0):
@@ -407,7 +412,7 @@ class Middleman:
         with self._lock:
             if epoch != self._epoch and not (decision.stop or decision.mode is Mode.HELP):
                 return None  # a stop or help came in while this was being read
-            if decision.forward and self.on_ack:
+            if decision.forward and not decision.reply and self.on_ack:
                 self.on_ack()  # no spoken reply: perception answers later, so beep to say it was heard
             if decision.mode is None:
                 return decision  # stay in the current mode: speak the reply, or send the text to perception

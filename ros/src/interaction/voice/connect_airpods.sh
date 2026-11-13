@@ -4,9 +4,10 @@
 # container then use the AirPods through the mounted sound socket (start_voice_ros.sh).
 # Copy to ~/connect_airpods.sh on the Jetson. "~/connect_airpods.sh --stop" ends the keep-alive.
 #
-# The AirPods' address is set below (or AIRPODS=aa:bb:... ~/connect_airpods.sh). They must be out of the case, and not
+# The headset's address is set below, now the G21 Pro earphones (or AIRPODS=aa:bb:... ~/connect_airpods.sh, e.g. the AirPods
+# at E4:76:84:52:6E:61). The variable keeps its old name. The headset must be out of its case, and not
 # connected to a laptop or phone.
-AIRPODS=${AIRPODS:-E4:76:84:52:6E:61}
+AIRPODS=${AIRPODS:-24:DF:17:09:22:83}
 ID=${AIRPODS//:/_}
 SINK=bluez_output.$ID.1
 SRC=bluez_input.$ID.0

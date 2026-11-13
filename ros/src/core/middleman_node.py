@@ -22,9 +22,8 @@ the user says "stop", "exit manual mode" or "stop following".
 """
 
 import json
-import re
 
-from middleman import Middleman, Mode, qwen_interpreter
+from middleman import DESCRIBE, Middleman, Mode, qwen_interpreter
 
 # The topic parameters and their defaults. mode_topic and goal_topic are the names perception listens to.
 TOPICS = {
@@ -32,9 +31,6 @@ TOPICS = {
     'heard_topic': '/middleman/heard', 'mode_topic': '/mode', 'goal_topic': '/goal', 'status_topic': '/object_status',
     'description_topic': '/scene_description', 'done_topic': '/middleman/done'}
 
-# The questions perception can answer: it only describes the whole view.
-DESCRIBE = re.compile(r"\b(what's|what is|whats|describe)\b.*\b(in front|ahead|around|happening|room)\b|\bwhat (do|can) you see\b"
-                      r"|\bdescribe\b|\bwhere am i\b|\blook around\b")
 CANNOT_ANSWER = "Sorry, I can only describe what is in front of me."
 
 

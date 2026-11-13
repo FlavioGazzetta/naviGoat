@@ -72,7 +72,7 @@ other containers: Whisper (GPU), Ollama (Qwen), perception
 | [connect_airpods.sh](connect_airpods.sh), [start_voice_ros.sh](start_voice_ros.sh), [launch/voice.launch.py](launch/voice.launch.py) | The container version, see [Running as ROS nodes in the container](#running-as-ros-nodes-in-the-container) |
 | [whisper_server.py](whisper_server.py), [start_whisper_gpu.sh](start_whisper_gpu.sh) | Whisper on the GPU, as a small local server in the `navigoat:people-dev` container. Not set up on the current Jetson, see [Whisper on the GPU](#whisper-on-the-gpu) |
 
-`start_voice.sh` contains the AirPods' Bluetooth address (`E4:76:84:52:6E:61`). For other headphones, run `AIRPODS=aa:bb:cc:dd:ee:ff ~/start_voice.sh`.
+`start_voice.sh` and `connect_airpods.sh` contain the Bluetooth address of the G21 Pro earphones (`24:DF:17:09:22:83`), which have a microphone and the headset profile. For other headphones, such as the AirPods (`E4:76:84:52:6E:61`), run `AIRPODS=aa:bb:cc:dd:ee:ff ~/start_voice.sh` or `AIRPODS=aa:bb:cc:dd:ee:ff ~/start_voice_ros.sh`. To pair new ones once: put them in pairing mode, then `bluetoothctl scan on`, `pair <address>`, `trust <address>` and `connect <address>`.
 
 ## Setting up a Jetson from scratch
 
