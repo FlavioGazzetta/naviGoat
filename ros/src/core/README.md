@@ -46,6 +46,22 @@ ros2 topic pub --once /object_status std_msgs/msg/String "{data: 'not_found:chai
 
 The same package can be built with `colcon build --packages-select middleman --symlink-install` (it has a `package.xml`), so `ros2 run middleman middleman_node` works too.
 
+### All of Pete at once
+
+[launch/pete.launch.py](launch/pete.launch.py) starts the camera, perception (scene description, then object detection once Qwen has loaded) and the middleman with one command. The container needs the camera (`--privileged -v /dev:/dev`) and the GPU, as in [perception's README](../autonomy/perception/README.md):
+
+```bash
+ros2 launch /workspace/ros/src/core/launch/pete.launch.py
+```
+
+| Argument | Default | |
+| --- | --- | --- |
+| `camera` | `true` | `false` when the Orbbec ROS 2 driver runs the camera instead |
+| `search_time` | `5.0` | seconds object detection looks for a goal |
+| `use_qwen` | `false` | as above |
+| `voice` | `false` | `true` also starts the voice node. It needs the `VOICE=true` image and the host's sound socket (see `start_voice_ros.sh`); the voice launch file starts the middleman itself, so it is never started twice |
+| `whisper_url`, `listen`, `device` | as in the voice launch file | passed on to the voice node |
+
 ## What it does with a request
 
 - **Stop and help** are decided by rules, first, whatever else is running.
