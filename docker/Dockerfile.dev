@@ -23,6 +23,16 @@ RUN if [ "$PETE" = "true" ]; then \
         mkdir -p /opt/models && cd /opt/models && python3 -c "from ultralytics import YOLOWorld; YOLOWorld('yolov8s-worldv2.pt').set_classes(['chair'])"; \
     fi
 
+ARG VOICE=false
+# The voice nodes (ros/src/interaction/voice) need the audio libraries and the speech packages. The microphone and the speaker
+# are not in the container: they come from the host's sound system (PipeWire) through a mounted socket, see start_voice_ros.sh.
+# numpy stays below 2: the ROS packages (cv_bridge) are built against numpy 1. faster-whisper brings onnxruntime and the Silero
+# voice-detection model, and runs Whisper on the CPU if the GPU server is missing.
+RUN if [ "$VOICE" = "true" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends libportaudio2 libasound2-plugins pulseaudio-utils espeak-ng && rm -rf /var/lib/apt/lists/* && \
+        python3 -m pip install --no-cache-dir --break-system-packages "numpy<2" sounddevice faster-whisper; \
+    fi
+
 RUN printf '\nsource /opt/ros/jazzy/setup.bash\nif [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; fi\n' >> /etc/bash.bashrc
 
 RUN printf '\nif command -v ollama > /dev/null && ! pgrep -x ollama > /dev/null; then (ollama serve > /tmp/ollama.log 2>&1 &); fi\n' >> /etc/bash.bashrc

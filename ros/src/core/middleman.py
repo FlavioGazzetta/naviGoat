@@ -98,6 +98,9 @@ SAVED_NAMES = ('home', 'work')
 
 # The same local Ollama and model that Pete uses (ros/src/autonomy/perception/classification.py).
 OLLAMA_URL = 'http://localhost:11434/api/chat'
+# Must be the same as OLLAMA_OPTIONS in autonomy/perception/scene_description.py: the scene description uses the same model, and
+# Ollama reloads it (seconds on the Jetson, and it can end up on the CPU) whenever two callers ask with different settings.
+OLLAMA_OPTIONS = {'num_ctx': 4096}
 QWEN_MODEL = 'qwen3-vl:2b-instruct'
 
 QWEN_MODES = ('follow', 'object', 'location', 'gps', 'manual', 'perception', 'stop', 'help', 'unknown')
@@ -248,7 +251,7 @@ def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN
 
     def interpret(text, minimum=CONFIDENCE_THRESHOLD):
         messages = [{'role': 'system', 'content': prompt}, {'role': 'user', 'content': text}]
-        body = {'model': model, 'stream': False, 'keep_alive': -1, 'format': schema, 'options': {'num_predict': 40, 'temperature': 0}, 'messages': messages}
+        body = {'model': model, 'stream': False, 'keep_alive': -1, 'format': schema, 'options': {**OLLAMA_OPTIONS, 'num_predict': 40, 'temperature': 0}, 'messages': messages}
         try:
             request = urllib.request.Request(url, json.dumps(body).encode(), {'Content-Type': 'application/json'})
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -271,7 +274,7 @@ def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN
 def warm_up_qwen(url=OLLAMA_URL, model=QWEN_MODEL):
     """Load the model now, so the first request is not slow. False if Ollama is not reachable."""
     try:
-        request = urllib.request.Request(url, json.dumps({'model': model, 'messages': [], 'keep_alive': -1}).encode(), {'Content-Type': 'application/json'})
+        request = urllib.request.Request(url, json.dumps({'model': model, 'messages': [], 'keep_alive': -1, 'options': OLLAMA_OPTIONS}).encode(), {'Content-Type': 'application/json'})
         urllib.request.urlopen(request, timeout=300).close()
         return True
     except (urllib.error.URLError, TimeoutError, ValueError):

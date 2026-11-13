@@ -339,16 +339,37 @@ def run_terminal(args):
         pass
 
 
+# The settings a launch file can give as ROS parameters. Without ROS the command line still works.
+PARAMETERS = ('wake_word', 'follow_up', 'device', 'output_device', 'voice', 'voice_dir', 'speed', 'model', 'whisper_url', 'text_topic',
+              'min_rms', 'silence', 'vad', 'short_phrase', 'short_silence', 'max_phrase')
+
+
+def read_parameters(node, args):
+    """Settings given as ROS parameters (for example by voice_launch.py) replace the command line ones."""
+    for name in PARAMETERS:
+        default = getattr(args, name)
+        value = node.declare_parameter(name, '' if default is None else default).value  # an empty text stands for "not set"
+        setattr(args, name, None if default is None and value == '' else value)
+    args.no_listen = not node.declare_parameter('listen', True).value  # listen:=false only speaks, for tests without a microphone
+    for name in ('device', 'output_device'):
+        value = getattr(args, name)
+        setattr(args, name, int(value) if isinstance(value, str) and value.isdigit() else (value or None))
+    if args.whisper_url in ('', 'cpu', 'none'):  # a launch file cannot pass an empty value, so "cpu" means no GPU server
+        args.whisper_url = None
+
+
 def run_ros(args):
     import rclpy
     from std_msgs.msg import String
 
     rclpy.init()
     node = rclpy.create_node('voice')
+    read_parameters(node, args)
     text_pub = node.create_publisher(String, args.text_topic, 10)
     voice = Voice(args, lambda text: text_pub.publish(String(data=text)))
     node.create_subscription(String, '/pete/response', lambda msg: voice.on_reply(msg.data), 10)
-    threading.Thread(target=voice.listen, daemon=True).start()
+    if not args.no_listen:
+        threading.Thread(target=voice.listen, daemon=True).start()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -357,7 +378,7 @@ def run_ros(args):
         rclpy.try_shutdown()
 
 
-if __name__ == '__main__':
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--terminal', action='store_true', help='run without ROS')
     parser.add_argument('--no-listen', action='store_true', help='terminal mode: only speak, skip the microphone and Whisper')
@@ -379,10 +400,20 @@ if __name__ == '__main__':
     parser.add_argument('--short-silence', type=float, default=1.0, help='seconds of quiet that end a very short phrase')
     parser.add_argument('--max-phrase', type=float, default=15.0, help='longest phrase in seconds')
     args, _ = parser.parse_known_args()  # leave --ros-args for ROS
-    if args.list_devices:
-        print(sd.query_devices())
-        sys.exit()
     for name in ('device', 'output_device'):
         if isinstance(getattr(args, name), str) and getattr(args, name).isdigit():
             setattr(args, name, int(getattr(args, name)))
+    return args
+
+
+def main():
+    """The voice_node entry point: the ROS node, or with --terminal the version without ROS."""
+    args = parse_args()
+    if args.list_devices:
+        print(sd.query_devices())
+        return
     run_terminal(args) if args.terminal else run_ros(args)
+
+
+if __name__ == '__main__':
+    main()

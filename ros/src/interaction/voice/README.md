@@ -37,6 +37,24 @@ After a bare "Pete." the listener beeps and accepts the next phrase without the 
 | Words are wrong | See [Quality](#what-to-know-about-bluetooth-headphones-as-the-microphone). Say short, clear commands starting with "Pete". |
 | It talks to itself | The microphone is ignored while the robot speaks and for half a second after, but a long echo can still get through. Lower the speaker volume. |
 
+## Running as ROS nodes in the container
+
+`start_voice.sh` runs everything as one Python program on the host, with no ROS. To connect the voice to the rest of the robot, the same code also runs as ROS nodes in a container, next to Flavio's perception, which talks through topics:
+
+```
+host:      AirPods (Bluetooth, PipeWire)   connect_airpods.sh
+                 │ the sound socket, mounted into the container
+container: voice.py  ──/speech/text──▶  middleman_node.py  ──/goal, /mode──▶  perception
+           (speaks /pete/response)  ◀──/pete/response, /scene_description, /object_status──
+other containers: Whisper (GPU), Ollama (Qwen), perception
+```
+
+- The team's [Dockerfile.dev](../../../../docker/Dockerfile.dev) has a `VOICE` option, like `PETE`, that adds the audio libraries and the speech packages to `navigoat:dev`: `docker build -f docker/Dockerfile.dev --build-arg PETE=true --build-arg VOICE=true -t navigoat:dev .` (add `PETE=true` too on the Jetson, because the same image runs perception, Whisper and Qwen).
+- [connect_airpods.sh](connect_airpods.sh) stays on the host, because Bluetooth and the sound system belong to it. [start_voice_ros.sh](start_voice_ros.sh) runs it, starts Whisper and Ollama, then starts the voice container with the host's sound socket mounted (`-v /run/user/1000/pulse:/run/user/1000/pulse -e PULSE_SERVER=unix:/run/user/1000/pulse/native`).
+- [launch/voice.launch.py](launch/voice.launch.py) starts `voice.py` and the middleman, like `perception.launch.py`: `ros2 launch /workspace/ros/src/interaction/voice/launch/voice.launch.py use_qwen:=true whisper_url:=http://127.0.0.1:8765`. `listen:=false` starts it without a microphone, for tests.
+- The settings are ROS parameters (`device`, `output_device`, `model`, `voice`, `speed`, `whisper_url`, `text_topic`, `follow_up`, `min_rms`, `silence`, ...), the command line works without ROS (`python3 voice.py --terminal`). The middleman's topics are in [core/README.md](../../core/README.md).
+- The folders are also ROS packages (`voice_nodes` and `middleman`, with a `package.xml` and `setup.py`), so `colcon build` and a `bringup` launch file can include them.
+
 ## Reaching the Jetson
 
 - **USB-C cable, `192.168.55.1`.** The simplest, but the link has dropped and SSH sometimes times out ("banner exchange" or "connection timed out"). Use a USB 3 data cable in the Jetson's USB-C device port. Retrying, or keeping one session open instead of many short ones, helps.
@@ -51,6 +69,7 @@ After a bare "Pete." the listener beeps and accepts the next phrase without the 
 | [start_voice.sh](start_voice.sh) | Goes in the Jetson's home folder as `~/start_voice.sh`. Connects the AirPods (3 tries), waits for their speaker and microphone, sets them as the default sound devices, keeps the microphone alive, then runs `listen_controller.py` with recording on |
 | [listen_controller.py](listen_controller.py) | Microphone, Whisper, the middleman, then speaks the reply. No ROS. Records every phrase and logs it with `--save-dir` |
 | [voice.py](voice.py) | The pieces the others use (microphone capture, Whisper, speaking), and the ROS version: publishes the text on `/speech/text` and speaks `/pete/response` |
+| [connect_airpods.sh](connect_airpods.sh), [start_voice_ros.sh](start_voice_ros.sh), [launch/voice.launch.py](launch/voice.launch.py) | The container version, see [Running as ROS nodes in the container](#running-as-ros-nodes-in-the-container) |
 | [whisper_server.py](whisper_server.py), [start_whisper_gpu.sh](start_whisper_gpu.sh) | Whisper on the GPU, as a small local server in the `navigoat:people-dev` container. Not set up on the current Jetson, see [Whisper on the GPU](#whisper-on-the-gpu) |
 
 `start_voice.sh` contains the AirPods' Bluetooth address (`E4:76:84:52:6E:61`). For other headphones, run `AIRPODS=aa:bb:cc:dd:ee:ff ~/start_voice.sh`.
@@ -110,6 +129,6 @@ The code first ran Whisper on the CPU through `faster-whisper`. Its ARM build fr
 ## Not done yet
 
 - **A reboot has not been tested** with the login-screen fix. If `start_voice.sh` asks for a password after a reboot, the login screen's audio came back.
-- **The ROS version is not running on the Jetson.** `voice.py` needs `rclpy`, and the Jetson host has no ROS (it is in the Docker image). The middleman's ROS node (`core/middleman_node.py`) was tested in the container with the real ROS 2 and with Flavio's real scene description node, but not with the real object search or the camera.
+- **The container version has not been run on the Jetson yet.** It was built and tested on a laptop with real ROS 2 (build, launch, parameters, topics) but without a microphone. Not tested: the AirPods through the mounted sound socket, the Silero model and the speech voice inside the container, and everything fitting in the 8 GB together with perception.
 - **Nothing acts on the decisions yet.** "Following." is only said; no follow or navigation node reads `/middleman/mode`.
 - **GPU Whisper together with Pete's models** (Qwen and YOLO) is untested. They share the 8 GB of the Orin Nano, so a smaller Whisper model may be needed.
