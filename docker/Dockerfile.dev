@@ -36,8 +36,14 @@ RUN if [ "$VOICE" = "true" ]; then \
         mkdir -p /root/.cache/piper && cd /root/.cache/piper && \
         for file in en_GB-northern_english_male-medium.onnx en_GB-northern_english_male-medium.onnx.json; do \
             curl -fsSL -o $file https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/northern_english_male/medium/$file; \
-        done; \
+        done && \
+        python3 -m pip install --no-cache-dir --break-system-packages --no-deps openai-whisper && \
+        python3 -m pip install --no-cache-dir --break-system-packages "numpy<2" numba tiktoken more-itertools && \
+        (python3 -c "import torch" 2>/dev/null && python3 -c "import whisper; whisper.load_model('base.en')" || true); \
     fi
+# openai-whisper is for the Whisper GPU server (whisper_server.py, started by start_whisper_gpu.sh). It is installed with --no-deps
+# so pip does not replace the Jetson's CUDA PyTorch (from the PETE step) with a CPU one. The base.en weights are downloaded into the
+# image when PyTorch is there, so nothing is fetched on the first start.
 
 RUN printf '\nsource /opt/ros/jazzy/setup.bash\nif [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; fi\n' >> /etc/bash.bashrc
 

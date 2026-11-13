@@ -57,7 +57,7 @@ trap 'kill $KEEP 2>/dev/null' EXIT
 
 # 5. Whisper on the GPU if its container is set up, otherwise on the CPU.
 WHISPER=""
-if [ -x ~/start_whisper_gpu.sh ] && [ -d ~/whisper-gpu/site/whisper ] && docker image inspect navigoat:dev >/dev/null 2>&1; then
+if [ -x ~/start_whisper_gpu.sh ] && docker run --rm navigoat:dev python3 -c 'import whisper' >/dev/null 2>&1; then
   ~/start_whisper_gpu.sh && WHISPER="--whisper-url http://127.0.0.1:8765" || echo "GPU server did not start: using the CPU instead"
 fi
 

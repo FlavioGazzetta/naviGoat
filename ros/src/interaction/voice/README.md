@@ -124,7 +124,7 @@ Restarting `bluetooth` makes PipeWire lose its registration, so run `systemctl -
 
 ## Whisper on the GPU
 
-The code first ran Whisper on the CPU through `faster-whisper`. Its ARM build from pip has no CUDA, so on the current Jetson it runs on the CPU: about 1.6 to 2.8 s per phrase of 2 to 4 s with `base.en`, plus the 0.8 s of silence the listener waits for (`--silence`). On the previous install a GPU server was set up (`whisper_server.py`, run in the `navigoat:people-dev` container with OpenAI's `openai-whisper`), which measured 0.17 to 0.45 s with `base.en` and 0.15 to 0.24 s with `tiny.en`. The re-flashed Jetson does not have that container image, so `start_voice.sh` uses the CPU and only tries the GPU server if both `~/start_whisper_gpu.sh` and the image exist.
+The code first ran Whisper on the CPU through `faster-whisper`. Its ARM build from pip has no CUDA, so on the current Jetson it runs on the CPU: about 1.6 to 2.8 s per phrase of 2 to 4 s with `base.en`, plus the 0.8 s of silence the listener waits for (`--silence`). The GPU server (`whisper_server.py`, started by `start_whisper_gpu.sh` in the `navigoat:dev` container with OpenAI's `openai-whisper`) measured 0.17 to 0.45 s with `base.en` and 0.15 to 0.24 s with `tiny.en`. `openai-whisper`, its few dependencies and the `base.en` weights are installed in the image by the `VOICE` option of `docker/Dockerfile.dev`, so nothing is installed by hand on the Jetson. If the server cannot start, the listener uses the CPU.
 
 ## Not done yet
 
