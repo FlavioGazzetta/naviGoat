@@ -214,7 +214,7 @@ local_costmap:
         mark_threshold: 0
         observation_sources: lidar
         lidar:
-          topic: /lidar/points
+          topic: /unilidar/cloud
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -245,7 +245,7 @@ global_costmap:
         enabled: False
         observation_sources: lidar
         lidar:
-          topic: /lidar/points
+          topic: /unilidar/cloud
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -400,7 +400,7 @@ collision_monitor:
     observation_sources: ["lidar"]
     lidar:
       type: "pointcloud"
-      topic: "/lidar/points"
+      topic: "/unilidar/cloud"
       min_height: 0.15
       max_height: 2.0
       enabled: True

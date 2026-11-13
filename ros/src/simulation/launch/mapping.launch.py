@@ -56,7 +56,7 @@ def launch_rtabmap(context):
             executable='rtabmap',
             name='rtabmap',
             parameters=[parameters],
-            remappings=[('scan_cloud', '/lidar/points'), ('odom', '/odom')],
+            remappings=[('scan_cloud', '/unilidar/cloud'), ('odom', '/odom')],
             output='screen',
         ),
     ]
