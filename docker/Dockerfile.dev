@@ -28,9 +28,15 @@ ARG VOICE=false
 # are not in the container: they come from the host's sound system (PipeWire) through a mounted socket, see start_voice_ros.sh.
 # numpy stays below 2: the ROS packages (cv_bridge) are built against numpy 1. faster-whisper brings onnxruntime and the Silero
 # voice-detection model, and runs Whisper on the CPU if the GPU server is missing.
+# The robot speaks with a Piper neural voice (the default of voice.py, looked for in ~/.cache/piper); without it the listener
+# falls back to the robotic espeak-ng voice, which is why espeak-ng stays installed.
 RUN if [ "$VOICE" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends libportaudio2 libasound2-plugins pulseaudio-utils espeak-ng && rm -rf /var/lib/apt/lists/* && \
-        python3 -m pip install --no-cache-dir --break-system-packages "numpy<2" sounddevice faster-whisper; \
+        apt-get update && apt-get install -y --no-install-recommends libportaudio2 libasound2-plugins pulseaudio-utils espeak-ng curl ca-certificates && rm -rf /var/lib/apt/lists/* && \
+        python3 -m pip install --no-cache-dir --break-system-packages "numpy<2" sounddevice faster-whisper piper-tts && \
+        mkdir -p /root/.cache/piper && cd /root/.cache/piper && \
+        for file in en_GB-northern_english_male-medium.onnx en_GB-northern_english_male-medium.onnx.json; do \
+            curl -fsSL -o $file https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/northern_english_male/medium/$file; \
+        done; \
     fi
 
 RUN printf '\nsource /opt/ros/jazzy/setup.bash\nif [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; fi\n' >> /etc/bash.bashrc

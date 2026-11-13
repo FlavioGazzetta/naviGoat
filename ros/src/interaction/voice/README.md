@@ -119,7 +119,7 @@ Restarting `bluetooth` makes PipeWire lose its registration, so run `systemctl -
 - **Quality is phone-call level.** The headset profile is 8 kHz mono and the AirPods offer no better profile for the microphone. In testing, many phrases were mis-heard ("Pete, you probably forgot to do technically much"). Accuracy was not measured on a test set, so there is no error rate. A wired or USB microphone is much better.
 - **Volumes.** The mic starts low, so the script sets it to 100% and the listener's threshold to `--min-rms 0.006`. The speaker is set to 40%.
 - **The AirPods disconnect** when they go back in the case or sit idle. Wake them and run `start_voice.sh` again.
-- **The voice is the system voice** (`espeak-ng`, played through PipeWire with `paplay`). Piper and Kokoro voices are used if installed and named with `--voice`, but they are not installed on the Jetson.
+- **The voice is a Piper neural voice** (`en_GB-northern_english_male-medium`), installed in the image by the `VOICE` option of `Dockerfile.dev`. A listener that cannot load it ("Piper voice ... not available" at start) falls back to the robotic `espeak-ng` system voice, played through PipeWire with `paplay`. Another Piper voice, or a Kokoro voice, is chosen with `--voice`; `--speed` changes how fast it speaks.
 - BlueZ logs show warnings (`already registered`, `RFCOMM receive command but modem not available`). The setup works despite them.
 
 ## Whisper on the GPU

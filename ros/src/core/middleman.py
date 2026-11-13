@@ -13,7 +13,7 @@ Modes (the middleman only handles going somewhere, following, and stopping):
 Going to a location, object or GPS destination ends by itself: the code that drives it calls finish() on arrival.
 Following and manual mode have no goal, so they only end when the user says stop or exits the mode.
 
-"Where is X" / "find X" is not handled for now (a spoken reply says so). Everything else is about what the camera
+"Where is X" / "find X" takes the user to X, the same as "take me to X". Everything else is about what the camera
 sees ("what's in front of me", "is the light on?") and is not the middleman's job: the text goes straight to perception over ROS (see middleman_node.py) and the
 mode is unchanged. A place or object that is not in catalog.py gets a spoken reply ("I don't know where the piano is.");
 perception is only asked about objects in the list, so "I couldn't find the chair." means it looked and did not see one.
@@ -87,8 +87,9 @@ _OUTSIDE = re.compile(r"\b(take|bring|get|lead|guide|walk)( me)? (outside|out)\b
 _NEED_PLACE = re.compile(r"\b(i need|i want|i have to|i'd like) (to )?(go to |get to |use |find )?(the )?(?P<target>bathroom|restroom|washroom|toilet|kitchen|exit|pee)\b")
 _NEED_PLACE_ALIASES = {'toilet': 'bathroom', 'pee': 'bathroom'}
 _TWO_STEPS = re.compile(r"\b(and then|then)\b")
-# "Where is X" / "find X": not handled for now, the middleman only takes the user to places.
+# "Where is X" / "find X" is answered by taking the user to X, the same as "take me to X".
 _FIND = re.compile(r"\b(where's|where is|where are|find|locate|look for|is there|do you see|i lost|i've lost|i misplaced|i'm looking for)\b|^where\b")
+_FIND_TARGET = re.compile(r"\b(where's|where is|where are|find|locate|look for|is there|do you see|i lost|i've lost|i misplaced|i'm looking for)\b(?P<target>.*)")
 # Anything about what is around or in view goes to perception.
 _SCENE = re.compile(r"\b(what's|what is|whats|describe|what (do|can) you see|i'd like|i would like|i need|i want|somewhere to|i'm thirsty|i am thirsty)\b|^(what|who|which|is|are|do|does|can|how)\b")
 _FILLER = re.compile(r"^(the|a|an|my|any|nearest|closest) | (please|in front of me|around me|here|in the room|nearby|near me|close by)$")
@@ -324,7 +325,8 @@ def classify_by_rules(text, locations=LOCATIONS, require_wake_word=False, saved=
     if _NO_DESTINATION.search(text):
         return Decision(None, text=text, reply='Where to?')
     if _FIND.search(text) and not (_GUIDE.search(text) or _NEED_PLACE.search(text) or _GPS.search(text)):
-        return Decision(None, text=text, reply="Can't look for things.")
+        match = _FIND_TARGET.search(text)
+        return resolve(clean_target(match.group('target')) if match else '', text, locations, saved)  # "where is the cup" = "take me to the cup"
     if _GPS.search(text):
         match = _GPS_TARGET.search(text)
         return gps_decision(clean_target(match.group('target')) if match else '', text)
