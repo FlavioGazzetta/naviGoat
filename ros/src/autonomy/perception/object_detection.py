@@ -5,6 +5,7 @@ import collections
 import math
 import os
 import random
+import sys
 import threading
 import time
 
@@ -21,49 +22,10 @@ from std_msgs.msg import String
 YOLO_MODEL = os.environ.get('PETE_YOLO_MODEL', 'yolov8s-worldv2.pt')
 CAMERA_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)  # newest frame only
 
-VOCABULARY = [
-    # people and animals
-    'person', 'dog', 'cat', 'bird', 'horse',
-    # furniture and the building
-    'chair', 'couch', 'bed', 'table', 'bench', 'door', 'door handle', 'window', 'stairs', 'elevator', 'light switch',
-    'toilet', 'sink', 'bathtub', 'shower', 'mirror', 'lamp', 'clock', 'shelf', 'cupboard', 'bin', 'plant', 'vase',
-    # electronics
-    'tv', 'laptop', 'keyboard', 'mouse', 'remote', 'cell phone', 'headphones', 'charger', 'printer', 'speaker',
-    # kitchen
-    'refrigerator', 'microwave', 'oven', 'toaster', 'kettle', 'bottle', 'can', 'cup', 'bowl', 'plate', 'fork',
-    'knife', 'spoon',
-    # food
-    'banana', 'apple', 'orange', 'sandwich', 'pizza', 'cake',
-    # personal things
-    'suitcase', 'keys', 'wallet', 'book', 'pen', 'scissors', 'toothbrush', 'towel', 'pillow', 'box', 'hair drier',
-    # sport and play
-    'sports ball', 'frisbee', 'tennis racket', 'skateboard',
-    # street
-    'traffic light', 'stop sign', 'fire hydrant', 'car', 'bus', 'truck', 'bicycle', 'motorcycle']
-WORN = ['backpack', 'handbag', 'umbrella', 'glasses', 'hat', 'jacket', 'shoe', 'teddy bear']
+# The word lists are shared with the middleman (core/catalog.py), so both always know the same objects
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'core'))
+from catalog import OBJECT_ALIASES as ALIASES, VOCABULARY, WORN  # noqa: E402
 KNOWN = VOCABULARY + WORN  # every word whose numbers are worked out at launch
-ALIASES = {
-    'people': 'person', 'man': 'person', 'woman': 'person', 'child': 'person', 'human': 'person', 'puppy': 'dog',
-    'kitten': 'cat',
-    'seat': 'chair', 'armchair': 'chair', 'stool': 'chair', 'sofa': 'couch', 'settee': 'couch', 'desk': 'table',
-    'dining table': 'table', 'doorway': 'door', 'handle': 'door handle', 'door knob': 'door handle',
-    'doorknob': 'door handle', 'steps': 'stairs', 'staircase': 'stairs', 'lift': 'elevator', 'switch': 'light switch',
-    'loo': 'toilet', 'bath': 'bathtub', 'washbasin': 'sink', 'basin': 'sink', 'light': 'lamp', 'bookshelf': 'shelf',
-    'cabinet': 'cupboard', 'wardrobe': 'cupboard', 'trash can': 'bin', 'rubbish bin': 'bin',
-    'potted plant': 'plant', 'flower pot': 'plant', 'flowers': 'vase',
-    'television': 'tv', 'television set': 'tv', 'monitor': 'tv', 'screen': 'tv', 'computer screen': 'tv',
-    'computer': 'laptop', 'remote control': 'remote', 'tv remote': 'remote', 'phone': 'cell phone',
-    'mobile phone': 'cell phone', 'mobile': 'cell phone', 'smartphone': 'cell phone', 'earphones': 'headphones',
-    'headset': 'headphones', 'cable': 'charger',
-    'fridge': 'refrigerator', 'water bottle': 'bottle', 'mug': 'cup', 'glass': 'cup',
-    'wine glass': 'cup', 'dish': 'plate',
-    'rucksack': 'backpack', 'bag': 'handbag', 'purse': 'handbag', 'luggage': 'suitcase', 'key': 'keys',
-    'sunglasses': 'glasses', 'spectacles': 'glasses', 'cap': 'hat', 'coat': 'jacket', 'shoes': 'shoe', 'trainers': 'shoe',
-    'pencil': 'pen', 'cushion': 'pillow', 'package': 'box', 'parcel': 'box', 'hair dryer': 'hair drier',
-    'ball': 'sports ball', 'football': 'sports ball', 'soccer ball': 'sports ball', 'basketball': 'sports ball',
-    'tennis ball': 'sports ball', 'rugby ball': 'sports ball',
-    'crossing light': 'traffic light', 'pedestrian light': 'traffic light', 'bike': 'bicycle', 'motorbike': 'motorcycle',
-    'van': 'truck', 'lorry': 'truck'}
 PLURAL = {'stairs', 'keys', 'glasses', 'headphones', 'scissors'}
 
 
