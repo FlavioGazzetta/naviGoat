@@ -15,7 +15,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('camera', default_value='true'),  # false when the Orbbec ROS 2 driver runs the camera
         DeclareLaunchArgument('search_time', default_value='5.0'),
-        DeclareLaunchArgument('use_qwen', default_value='false'),
+        DeclareLaunchArgument('use_qwen', default_value='true'),  # the middleman shares scene description's loaded Qwen
         DeclareLaunchArgument('voice', default_value='false'),  # true needs the VOICE=true image and the host's sound socket
         DeclareLaunchArgument('whisper_url', default_value='http://127.0.0.1:8765'),
         DeclareLaunchArgument('listen', default_value='true'),

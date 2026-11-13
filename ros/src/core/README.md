@@ -58,7 +58,7 @@ ros2 launch /workspace/ros/src/core/launch/pete.launch.py
 | --- | --- | --- |
 | `camera` | `true` | `false` when the Orbbec ROS 2 driver runs the camera instead |
 | `search_time` | `5.0` | seconds object detection looks for a goal |
-| `use_qwen` | `false` | as above |
+| `use_qwen` | `true` | as above. Here it is on by default: Ollama runs in the same container for scene description, so the middleman shares that loaded Qwen |
 | `voice` | `false` | `true` also starts the voice node. It needs the `VOICE=true` image and the host's sound socket (see `start_voice_ros.sh`); the voice launch file starts the middleman itself, so it is never started twice |
 | `whisper_url`, `listen`, `device` | as in the voice launch file | passed on to the voice node |
 
