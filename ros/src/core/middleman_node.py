@@ -33,7 +33,8 @@ TOPICS = {
     'description_topic': '/scene_description', 'done_topic': '/middleman/done'}
 
 # The questions perception can answer: it only describes the whole view.
-DESCRIBE = re.compile(r"\b(what's|what is|whats|describe)\b.*\b(in front|ahead|around|happening|room)\b|\bwhat (do|can) you see\b")
+DESCRIBE = re.compile(r"\b(what's|what is|whats|describe)\b.*\b(in front|ahead|around|happening|room)\b|\bwhat (do|can) you see\b"
+                      r"|\bdescribe\b|\bwhere am i\b|\blook around\b")
 CANNOT_ANSWER = "Sorry, I can only describe what is in front of me."
 
 

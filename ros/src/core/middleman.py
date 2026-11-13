@@ -92,6 +92,15 @@ _FIND = re.compile(r"\b(where's|where is|where are|find|locate|look for|is there
 # Anything about what is around or in view goes to perception.
 _SCENE = re.compile(r"\b(what's|what is|whats|describe|what (do|can) you see|i'd like|i would like|i need|i want|somewhere to|i'm thirsty|i am thirsty)\b|^(what|who|which|is|are|do|does|can|how)\b")
 _FILLER = re.compile(r"^(the|a|an|my|any|nearest|closest) | (please|in front of me|around me|here|in the room|nearby|near me|close by)$")
+# Questions about where the user is or what is around: the scene description answers them.
+_LOOK = re.compile(r"\bwhere am i\b|\blook around\b|\bdescribe\b|\bwhat (do|can) you see\b|\bwhat'?s around\b")
+# Going somewhere without saying where ("take me", "go there", "let's go"): ask, never guess.
+_NO_DESTINATION = re.compile(r"^(please )?((let's|lets|let us) go|(take|bring|lead|guide|walk|get) me|go|come on|move|go on)( (there|then|now|please|ahead|on))*$")
+# Words that carry no need or place. A request made only of these is not given to the language model, which would
+# otherwise pick a place anyway ("go" -> exit, "okay" -> bathroom, with the same confidence as a real need).
+_VAGUE_WORDS = {'pete', 'go', 'going', 'take', 'bring', 'lead', 'guide', 'walk', 'get', 'me', 'us', 'there', 'here', 'then', 'now',
+                'please', 'come', 'on', 'okay', 'ok', 'yes', 'yeah', 'no', 'let', "let's", 'lets', 'next', 'leave', 'look', 'around',
+                'the', 'a', 'to', 'and', 'so', 'um', 'uh', 'hmm', 'hi', 'hello', 'hey', 'thanks', 'thank', 'you', 'move', 'again', 'ahead'}
 
 # Places the user sets once, e.g. {'home': (Mode.GPS, '12 main street')}.
 SAVED_NAMES = ('home', 'work')
@@ -310,6 +319,10 @@ def classify_by_rules(text, locations=LOCATIONS, require_wake_word=False, saved=
         return Decision(None, text=text, reply='One at a time.')
     if _MANUAL.search(text):
         return manual_decision(text)
+    if _LOOK.search(text):
+        return to_perception(text)
+    if _NO_DESTINATION.search(text):
+        return Decision(None, text=text, reply='Where to?')
     if _FIND.search(text) and not (_GUIDE.search(text) or _NEED_PLACE.search(text) or _GPS.search(text)):
         return Decision(None, text=text, reply="Can't look for things.")
     if _GPS.search(text):
@@ -342,7 +355,9 @@ def classify(text, locations=LOCATIONS, require_wake_word=False, saved=None, int
         # A single unfamiliar word is nearly always a mis-heard name ("prud" for Pret), not a description: it gets the honest
         # refusal, not a guess by meaning (it was taken for the prayer room).
         unknown_place = decision.reply.startswith("I don't know where") and len((request or '').split()) >= 5
-        not_understood = decision.reply == 'Say that again.' or unknown_place
+        # Nothing but filler words ("go", "okay", "come on"): there is no need to match, so do not let the model guess one
+        has_content = any(word not in _VAGUE_WORDS for word in (request or '').split())
+        not_understood = (decision.reply == 'Say that again.' and has_content) or unknown_place
         a_need = decision.forward and _NEED.search(request or '')  # "I want a coffee" is sent on to perception, which can only describe
         # Asked for a named place that is not stored ("the dean's office"): only a very sure answer may replace the refusal.
         sure = 0.9 if decision.reply.startswith("I don't know where") else CONFIDENCE_THRESHOLD
