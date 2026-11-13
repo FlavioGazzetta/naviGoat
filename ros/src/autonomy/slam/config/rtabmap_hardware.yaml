@@ -1,0 +1,7 @@
+rtabmap:
+  ros__parameters:
+    map_frame_id: map
+    publish_tf: true
+    qos_imu: 1
+    Optimizer/Strategy: '1'
+    Optimizer/GravitySigma: '0.3'

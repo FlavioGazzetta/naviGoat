@@ -6,7 +6,6 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -86,13 +85,15 @@ def generate_launch_description():
             condition=IfCondition(LaunchConfiguration('filter_dynamic_objects')),
             output='screen',
         ),
-        Node(
-            package='rtabmap_slam',
-            executable='rtabmap',
-            name='rtabmap',
-            parameters=[os.path.join(slam_dir, 'config', 'rtabmap.yaml'), {'database_path': LaunchConfiguration('database_path'), 'odom_frame_id': ParameterValue(LaunchConfiguration('odom_frame_id'), value_type=str)}],
-            remappings=[('scan_cloud', PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter_dynamic_objects'), "'.lower() in ('true', '1') else '/unilidar/cloud'"])), ('imu', '/unilidar/imu'), ('odom', '/odom')],
-            output='screen',
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(slam_dir, 'launch', 'slam.launch.py')),
+            launch_arguments={
+                'database_path': LaunchConfiguration('database_path'),
+                'config_file': os.path.join(slam_dir, 'config', 'rtabmap_hardware.yaml'),
+                'odom_frame_id': LaunchConfiguration('odom_frame_id'),
+                'scan_cloud_topic': PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter_dynamic_objects'), "'.lower() in ('true', '1') else '/unilidar/cloud'"]),
+                'imu_topic': '/unilidar/imu',
+            }.items(),
         ),
         Node(
             package='rviz2',
