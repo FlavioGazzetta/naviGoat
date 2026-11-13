@@ -63,7 +63,9 @@ class ObjectDetection(Node):
         self.confirm_frames = param('confirm_frames', 3)  # sightings of the same object before 'found', so one-off flukes are ignored
         self.track_gate = param('track_gate', 0.5)
         self.lost_after = param('lost_after', 1.0)
-        self.lost_looks = param('lost_looks', 4)
+        self.lost_looks = param('lost_looks', 6)
+        self.prev_target = None  # where the last followed object was lost, to recognise it when it is seen again
+        self.close_hits = 0  # sightings of the followed object in the zoomed close-up around it
         self.misses = 0
         self.focused = False  # whether this look was a crop around the followed object
         self.target = None  # (x, y, z) of the object being followed
@@ -159,6 +161,7 @@ class ObjectDetection(Node):
         if not self.goal:
             return
         self.started, self.last_point, self.hits, self.target, self.target_box, self.look = time.monotonic(), None, 0, None, None, 0
+        self.prev_target, self.misses, self.close_hits = None, 0, 0
         if not self.learning:
             self.get_logger().info(f'Looking for a {self.goal}.')
 
@@ -180,9 +183,12 @@ class ObjectDetection(Node):
         point, boxes, chosen, region = self.locate(frame, msg.header.stamp)
         self.misses = 0 if chosen is not None else self.misses + self.focused
         if self.misses >= self.lost_looks:  # gone from where it was: drop it and look at the whole frame next
+            self.prev_target = self.target
             self.target, self.target_box, self.misses, self.look = None, None, 0, 0
         self.publish_preview(frame, boxes, chosen, point, region)
-        if point is not None and self.hits >= self.confirm_frames:
+        # Also seen at least once in the zoomed close-up: things that only look like the goal in the wide view (seen from
+        # far, at low detail) are not reported
+        if point is not None and self.hits >= self.confirm_frames and self.close_hits >= 1:
             point.header.stamp = msg.header.stamp
             self.last_point = point  # where it was last seen, sent when the search ends
         if time.monotonic() - self.started >= self.search_time:
@@ -205,9 +211,12 @@ class ObjectDetection(Node):
         h, w = shape[:2]
         self.focused = self.target_box is not None and time.monotonic() - self.target_seen <= self.lost_after
         if self.focused:
+            # About 4x the object: a small object is enlarged for YOLO (a 32 px bottle in 2.7x zoom was found in 6 of 6 busy
+            # scenes, against 3 of 6 at the size of a quarter), a big one still gets a wide view
             x1, y1, x2, y2 = self.target_box
-            cw = min(w, max(640, 3 * (x2 - x1), 3 * (y2 - y1) * 16 / 9))
-            ch = min(h, cw * 9 / 16)
+            ch = min(h, max(135, 4 * (y2 - y1), 4 * (x2 - x1) * 9 / 16))
+            cw = min(w, ch * 16 / 9)
+            ch = cw * 9 / 16
             cx = min(max((x1 + x2) / 2, cw / 2), w - cw / 2)
             cy = min(max((y1 + y2) / 2, ch / 2), h - ch / 2)
             return int(cx - cw / 2), int(cy - ch / 2), int(cx + cw / 2), int(cy + ch / 2)
@@ -256,10 +265,13 @@ class ObjectDetection(Node):
 
         now = time.monotonic()
         if self.target is not None and now - self.target_seen > self.lost_after:
+            self.prev_target = self.target
             self.target, self.target_box = None, None  # lost it: pick again
         if self.target is None:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0]), default=None)  # the closest one
-            self.hits = 0
+            # Found again where it was lost (a small object that YOLO misses now and then): keep counting its sightings
+            if pick is None or self.prev_target is None or np.linalg.norm(pick[0] - self.prev_target) > self.track_gate:
+                self.hits, self.close_hits = 0, 0
         else:
             pick = min(candidates, key=lambda c: np.linalg.norm(c[0] - self.target), default=None)  # the same one as before
             if pick is not None and np.linalg.norm(pick[0] - self.target) > self.track_gate:
@@ -268,6 +280,7 @@ class ObjectDetection(Node):
             return None, boxes, None, region
 
         self.target, self.target_box, self.target_seen, self.hits = pick[0], pick[1], now, self.hits + 1
+        self.close_hits += self.focused
         point = PointStamped()
         point.header.frame_id = self.frame_id
         point.point.x, point.point.y, point.point.z = (float(c) for c in pick[0])

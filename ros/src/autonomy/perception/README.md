@@ -74,6 +74,7 @@ To watch the camera from a laptop on the same network, with `camera:=true`, run 
 | `tile_reach` | object_detection | `0.15` | each quarter runs from a corner to a random point past the middle, at most this share of the frame height from it, so the borders between quarters move and an object on one isn't always split |
 | `confirm_frames` | object_detection | `3` | sightings of the same object before `found`, so one-off flukes are ignored. A far object seen only in its quarter takes about 0.8 s |
 | `track_gate` | object_detection | `0.5` | meters: it follows the closest goal object and only accepts a detection this near to where it was, so it doesn't jump between two chairs. While following it, YOLO looks at a crop around it in full detail |
+| `lost_looks` | object_detection | `6` | while following an object YOLO looks at a zoomed close-up around it (about 4x its size, so small objects are enlarged); missing it in this many close-ups in a row means it moved, so the whole frame is searched again. An object must be seen at least once in the close-up before it is reported, so things that only look like the goal from far are not |
 | `lost_after` | object_detection | `1.0` | seconds without seeing the followed object before it picks the closest one again |
 | `frame_id` | object_detection | `camera_link` | frame of `/object_mapping` |
 | `mode_name` | both | `perception` / `description` | the `/mode` value each node reacts to |
