@@ -1,0 +1,73 @@
+[1mdiff --git a/ros/src/autonomy/navigation/config/nav2_params.yaml b/ros/src/autonomy/navigation/config/nav2_params.yaml[m
+[1mindex 9c49e77..ad8983c 100644[m
+[1m--- a/ros/src/autonomy/navigation/config/nav2_params.yaml[m
+[1m+++ b/ros/src/autonomy/navigation/config/nav2_params.yaml[m
+[36m@@ -214,7 +214,7 @@[m [mlocal_costmap:[m
+         mark_threshold: 0[m
+         observation_sources: lidar[m
+         scan:[m
+[31m-          topic: /lidar/points[m
+[32m+[m[32m          topic: /unilidar/cloud[m
+           max_obstacle_height: 2.0[m
+           clearing: True[m
+           marking: True[m
+[36m@@ -244,7 +244,7 @@[m [mglobal_costmap:[m
+         enabled: True[m
+         observation_sources: lidar[m
+         scan:[m
+[31m-          topic: /lidar/points[m
+[32m+[m[32m          topic: /unilidar/cloud[m
+           max_obstacle_height: 2.0[m
+           clearing: True[m
+           marking: PointCloud2[m
+[1mdiff --git a/ros/src/autonomy/navigation/config/nav2_sim_params.yaml b/ros/src/autonomy/navigation/config/nav2_sim_params.yaml[m
+[1mindex 46cb664..97b4895 100644[m
+[1m--- a/ros/src/autonomy/navigation/config/nav2_sim_params.yaml[m
+[1m+++ b/ros/src/autonomy/navigation/config/nav2_sim_params.yaml[m
+[36m@@ -109,7 +109,7 @@[m [mcontroller_server:[m
+       wz_std: 0.4[m
+       vx_max: 1.5[m
+       vx_min: -0.4[m
+[31m-      vy_max: 0.5[m
+[32m+[m[32m      vy_max: 1.5[m
+       wz_max: 1.9[m
+       iteration_count: 1[m
+       prune_distance: 1.7[m
+[1mdiff --git a/ros/src/autonomy/slam/config/rtabmap.yaml b/ros/src/autonomy/slam/config/rtabmap.yaml[m
+[1mindex 9e93a12..02dd27b 100644[m
+[1m--- a/ros/src/autonomy/slam/config/rtabmap.yaml[m
+[1m+++ b/ros/src/autonomy/slam/config/rtabmap.yaml[m
+[36m@@ -15,3 +15,13 @@[m [mrtabmap:[m
+     Grid/3D: 'true'[m
+     Optimizer/Strategy: '1'[m
+     Optimizer/GravitySigma: '0.3'[m
+[32m+[m
+[32m+[m[32m    # Additional params[m
+[32m+[m[32m    Grid/MaxGroundAngle: '45' #[m[41m [m
+[32m+[m[32m    Grid/NormalK: '20'[m
+[32m+[m[32m    Grid/MinGroundHeight: '-0.3'[m
+[32m+[m[32m    Grid/MaxGroundHeight: '0.1'[m
+[32m+[m[32m    Grid/MaxObstacleHeight: '1.5'[m
+[32m+[m[32m    Grid/RayTracing: 'true'[m
+[32m+[m[32m    Grid/NoiseFilteringRadius: '0.1'[m
+[32m+[m[32m    Grid/NoiseFilteringMinNeighbors: '3'[m
+\ No newline at end of file[m
+[1mdiff --git a/ros/src/autonomy/slam/launch/mapping.launch.py b/ros/src/autonomy/slam/launch/mapping.launch.py[m
+[1mindex 743c881..3005a42 100644[m
+[1m--- a/ros/src/autonomy/slam/launch/mapping.launch.py[m
+[1m+++ b/ros/src/autonomy/slam/launch/mapping.launch.py[m
+[36m@@ -22,7 +22,7 @@[m [mdef generate_launch_description():[m
+         DeclareLaunchArgument('lidar_roll', default_value='0'),[m
+         DeclareLaunchArgument('lidar_pitch', default_value='0'),[m
+         DeclareLaunchArgument('lidar_yaw', default_value='0'),[m
+[31m-        DeclareLaunchArgument('database_path', default_value=os.path.expanduser('~/.ros/navigoat_hardware.db')),[m
+[32m+[m[32m        DeclareLaunchArgument('database_path', default_value=os.path.join(slam_dir, "maps", "temp_map.db")), #later should be changed to some smart naming depending on the place we are[m
+         DeclareLaunchArgument('odom_frame_id', default_value=''),[m
+         DeclareLaunchArgument('start_base', default_value='true'),[m
+         DeclareLaunchArgument('start_lidar', default_value='true'),[m
+[1mdiff --git a/ros/src/hardware/base/p2os2 b/ros/src/hardware/base/p2os2[m
+[1m--- a/ros/src/hardware/base/p2os2[m
+[1m+++ b/ros/src/hardware/base/p2os2[m
+[36m@@ -1 +1 @@[m
+[31m-Subproject commit 50740792e651ff929ade0f5d117d23b663518cdc[m
+[32m+[m[32mSubproject commit 50740792e651ff929ade0f5d117d23b663518cdc-dirty[m

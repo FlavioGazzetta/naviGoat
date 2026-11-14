@@ -9,3 +9,18 @@ rtabmap:
     qos: 1
     Reg/Strategy: '1'
     Grid/3D: 'true'
+<<<<<<< Updated upstream
+=======
+    Optimizer/Strategy: '1'
+    Optimizer/GravitySigma: '0.3'
+
+    # Additional params
+    Grid/MaxGroundAngle: '45' # 
+    Grid/NormalK: '20'
+    Grid/MinGroundHeight: '-0.3'
+    Grid/MaxGroundHeight: '0.1'
+    Grid/MaxObstacleHeight: '1.5'
+    Grid/RayTracing: 'true'
+    Grid/NoiseFilteringRadius: '0.1'
+    Grid/NoiseFilteringMinNeighbors: '3'
+>>>>>>> Stashed changes

@@ -214,7 +214,7 @@ local_costmap:
         mark_threshold: 0
         observation_sources: lidar
         scan:
-          topic: /lidar/points
+          topic: /unilidar/cloud
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -244,7 +244,7 @@ global_costmap:
         enabled: True
         observation_sources: lidar
         scan:
-          topic: /lidar/points
+          topic: /unilidar/cloud
           max_obstacle_height: 2.0
           clearing: True
           marking: PointCloud2

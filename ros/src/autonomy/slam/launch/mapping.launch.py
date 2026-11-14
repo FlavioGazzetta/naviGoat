@@ -21,7 +21,7 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_roll', default_value='0'),
         DeclareLaunchArgument('lidar_pitch', default_value='0'),
         DeclareLaunchArgument('lidar_yaw', default_value='0'),
-        DeclareLaunchArgument('database_path', default_value=os.path.expanduser('~/.ros/navigoat_hardware.db')),
+        DeclareLaunchArgument('database_path', default_value=os.path.join(slam_dir, "maps", "temp_map.db")), #later should be changed to some smart naming depending on the place we are
         DeclareLaunchArgument('odom_frame_id', default_value=''),
         DeclareLaunchArgument('start_base', default_value='true'),
         DeclareLaunchArgument('start_lidar', default_value='true'),
