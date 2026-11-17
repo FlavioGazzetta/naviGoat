@@ -32,14 +32,15 @@ def generate_launch_description():
         DeclareLaunchArgument('database_path', default_value=os.path.join(slam_dir, "maps", "temp_map.db")), #later should be changed to some smart naming depending on the place we are
         DeclareLaunchArgument('odom_frame_id', default_value=''),
         DeclareLaunchArgument('start_base', default_value='true'),
+        DeclareLaunchArgument('enable_motors', default_value='true'),
         DeclareLaunchArgument('start_lidar', default_value='true'),
         DeclareLaunchArgument('start_camera', default_value='false'),
         DeclareLaunchArgument('use_rgbd', default_value='false'),
         DeclareLaunchArgument('filter_dynamic_objects', default_value='true'),
         DeclareLaunchArgument('rviz', default_value='true'),
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('p2os_bringup'), 'launch', 'p2os_driver_launch.py'])),
-            launch_arguments={'port': LaunchConfiguration('pioneer_port')}.items(),
+            PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('bringup'), 'launch', 'base.launch.py'])),
+            launch_arguments={'port': LaunchConfiguration('pioneer_port'), 'enable_motors': LaunchConfiguration('enable_motors')}.items(),
             condition=IfCondition(LaunchConfiguration('start_base')),
         ),
         Node(

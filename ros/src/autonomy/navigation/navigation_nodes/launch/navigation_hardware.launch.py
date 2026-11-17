@@ -30,7 +30,7 @@ def launch_hardware(context):
 
     hardware_arguments = {name: LaunchConfiguration(name) for name in (
         'pioneer_port', 'lidar_port', 'lidar_x', 'lidar_y', 'lidar_z', 'lidar_roll', 'lidar_pitch', 'lidar_yaw',
-        'start_base', 'start_lidar', 'start_camera', 'use_rgbd', 'filter_dynamic_objects', 'initial_pose',
+        'start_base', 'enable_motors', 'start_lidar', 'start_camera', 'use_rgbd', 'filter_dynamic_objects', 'initial_pose',
     )}
     hardware_arguments.update({'mode': mode, 'database_path': database_path, 'odom_frame_id': 'odom', 'rviz': 'false'})
 
@@ -94,6 +94,7 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_pitch', default_value='0'),
         DeclareLaunchArgument('lidar_yaw', default_value='0'),
         DeclareLaunchArgument('start_base', default_value='true'),
+        DeclareLaunchArgument('enable_motors', default_value='true'),
         DeclareLaunchArgument('start_lidar', default_value='true'),
         DeclareLaunchArgument('start_camera', default_value='false'),
         DeclareLaunchArgument('use_rgbd', default_value='false'),

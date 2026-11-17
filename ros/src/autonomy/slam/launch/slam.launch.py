@@ -21,6 +21,7 @@ def launch_rtabmap(context):
         'use_sim_time': ParameterValue(LaunchConfiguration('use_sim_time'), value_type=bool),
         'odom_frame_id': ParameterValue(LaunchConfiguration('odom_frame_id'), value_type=str),
         'subscribe_rgbd': use_rgbd,
+        'Mem/IncrementalMemory': 'true' if mode == 'mapping' else 'false',
     }
 
     if use_rgbd:
@@ -30,7 +31,6 @@ def launch_rtabmap(context):
 
     if mode == 'localisation':
         parameters.append({
-            'Mem/IncrementalMemory': 'false',
             'Mem/InitWMWithAllNodes': 'true',
             'initial_pose': ParameterValue(LaunchConfiguration('initial_pose'), value_type=str),
         })
