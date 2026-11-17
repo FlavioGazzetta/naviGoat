@@ -5,3 +5,4 @@ rtabmap:
     qos_imu: 1
     Optimizer/Strategy: '1'
     Optimizer/GravitySigma: '0.3'
+    Grid/MaxObstacleHeight: '0.5'
