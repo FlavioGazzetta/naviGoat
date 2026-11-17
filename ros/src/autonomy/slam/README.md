@@ -68,3 +68,12 @@ to enable the motors
 ```bash
 ros2 topic pub --once /cmd_motor_state p2os_msgs/msg/MotorState "{state: 1}"
 ```
+
+
+to run the mapping with the non sense parameters
+```bash
+ros2 launch /workspace/ros/src/autonomy/slam/launch/mapping.launch.py \
+  database_path:=/workspace/ros/src/bringup/maps/<new_name>.db \
+  odom_frame_id:=odom \
+  rviz:=false
+```
