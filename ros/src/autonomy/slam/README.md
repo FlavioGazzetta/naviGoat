@@ -57,6 +57,9 @@ Movement and drift testing can be done with `odometry:=icp`.
 
 
 ## garbage
+```
+docker exec -it navigoat-dev bash
+```
 
 to publish a goal position
 
