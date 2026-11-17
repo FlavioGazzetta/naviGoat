@@ -77,3 +77,18 @@ ros2 launch /workspace/ros/src/autonomy/slam/launch/mapping.launch.py \
   odom_frame_id:=odom \
   rviz:=false
 ```
+
+
+
+## TO move later (navigation stuff)
+run basic nav2 with our parameters
+```bash
+ros2 launch nav2_bringup navigation_launch.py \
+  params_file:=/workspace/ros/src/autonomy/navigation/config/nav2_params.yaml \
+  use_sim_time:=false use_composition:=False
+```
+run the custom nav node
+```bash
+ros2 launch /workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation.launch.py \
+  places_file:=/workspace/ros/src/bringup/maps/fresh2_places.yaml
+```
