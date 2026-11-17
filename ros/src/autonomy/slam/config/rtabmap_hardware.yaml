@@ -5,3 +5,14 @@ rtabmap:
     qos_imu: 1
     Optimizer/Strategy: '1'
     Optimizer/GravitySigma: '0.3'
+
+    # Occupancy grid. Heights are relative to base_link; the lidar sits 0.5 m above it and only sees upwards.
+    # Set explicitly so values saved in an old database (e.g. MaxObstacleHeight 0.5) can't override them.
+    Grid/MaxGroundAngle: '45'
+    Grid/NormalK: '20'
+    Grid/MinGroundHeight: '-0.3'
+    Grid/MaxGroundHeight: '0.1'
+    Grid/MaxObstacleHeight: '1.5'  # keeps desks, people and walls, drops the ceiling (~2.6 m above base_link)
+    Grid/RayTracing: 'true'
+    Grid/NoiseFilteringRadius: '0.1'
+    Grid/NoiseFilteringMinNeighbors: '3'
