@@ -15,7 +15,7 @@ docker run --rm -it --name navigoat-dev --network=host --device=/dev/ttyUSB0:/de
 Inside the Jazzy container, build from `/workspace`:
 
 ```bash
-colcon build --base-paths ros/src/hardware/base/p2os2 ros/src/hardware/lidar/unilidar_sdk/unitree_lidar_ros2 --packages-up-to p2os_bringup p2os_urdf unitree_lidar_ros2 --symlink-install
+colcon build --base-paths ros/src --packages-up-to bringup p2os_urdf unitree_lidar_ros2 navigation_resources --symlink-install
 source install/setup.bash
 ```
 
@@ -39,16 +39,19 @@ Add these flags when creating the docker container, replacing USB paths as neede
 ros2 launch /workspace/ros/src/autonomy/slam/launch/mapping.launch.py
 ```
 
+The base launch enables the motors automatically after the driver subscriber is available. Pass `enable_motors:=false` to keep them disabled at startup. With `start_base:=false`, this launch neither starts the driver nor enables its motors.
+
 With Femto Bolt camera:
 
 ```bash
 ros2 launch /workspace/ros/src/autonomy/slam/launch/mapping.launch.py use_rgbd:=true start_camera:=true
 ```
 
-For a lidar-only test without the base, pass only the lidar device into Docker and run:
+For mapping without wheel odometry, pass the lidar device into Docker and run:
 
 ```bash
-ros2 launch /workspace/ros/src/autonomy/slam/launch/lidar_test.launch.py
+mkdir -p /workspace/maps
+ros2 launch navigation_resources lidar_test.launch.py odometry:=icp database_path:=/workspace/maps/lidar-icp.db
 ```
 
-Movement and drift testing can be done with `odometry:=icp`.
+This starts the lidar, lidar-based ICP odometry, RTAB-Map and RViz without the base driver. Stop other lidar and mapping launches first. The Pioneer driver must also be stopped because it publishes a competing `odom` to `base_link` transform. Move the lidar slowly to build the map, then stop the launch with Ctrl+C to save it. Without `odometry:=icp`, this test launch assumes a stationary lidar.

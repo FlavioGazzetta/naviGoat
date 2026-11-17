@@ -16,6 +16,7 @@ def generate_launch_description():
         DeclareLaunchArgument('database_path', default_value=os.path.expanduser('~/.ros/navigoat_lidar_test.db')),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument('odometry', default_value='stationary', choices=['stationary', 'icp']),
+        DeclareLaunchArgument('filter_dynamic_objects', default_value='false'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'mapping.launch.py')),
             launch_arguments={
@@ -24,6 +25,7 @@ def generate_launch_description():
                 'database_path': LaunchConfiguration('database_path'),
                 'rviz': LaunchConfiguration('rviz'),
                 'odom_frame_id': 'odom',
+                'filter_dynamic_objects': LaunchConfiguration('filter_dynamic_objects'),
             }.items(),
         ),
         Node(

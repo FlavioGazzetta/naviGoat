@@ -56,3 +56,5 @@ ros2 launch bringup launch.py
 ```
 
 ## [Simulation](ros/src/simulation/README.md)
+
+For mapping and navigation with the Pioneer base on a saved map, see [hardware navigation](ros/src/autonomy/navigation/README.md#running-on-the-pioneer-base).

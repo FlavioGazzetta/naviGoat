@@ -88,6 +88,110 @@ source install/setup.bash
 
 If you change `social_layer.cpp` you need to build again and restart Nav2. The Python files don't need a rebuild, just restart the node.
 
+## Running on the Pioneer base
+
+Run these commands on the Jetson. The hardware launch starts the Pioneer driver, lidar, robot transforms, RTAB-Map localisation, Nav2 and navigation nodes. It uses an RTAB-Map `.db` from the real environment, not a Gazebo map or an AMCL map YAML. Do not run the separate base bringup or mapping launch alongside it.
+
+From the repository root, initialise the hardware submodules and rebuild the image to include Nav2:
+
+```bash
+git submodule update --init --recursive
+docker build -f docker/Dockerfile.dev -t navigoat:dev .
+```
+
+Identify the Pioneer and lidar ports and replace the host paths below as needed. This example also maps the handle on `/dev/ttyACM0` and provides Bluetooth access for the wristband:
+
+```bash
+xhost +si:localuser:root
+docker run --rm -it --name navigoat-dev --network=host --security-opt apparmor=unconfined --device=/dev/ttyUSB0:/dev/unilidar --device=/dev/ttyUSB1:/dev/pioneer --device=/dev/ttyACM0:/dev/handle -v /run/dbus:/run/dbus -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:ro -v "$PWD:/workspace" -w /workspace navigoat:dev bash
+```
+
+Omit the handle device mapping if it is unplugged. For BLE, the host Bluetooth controller must support LE and `/etc/bluetooth/main.conf` must use `ControllerMode = dual`, rather than `bredr`.
+
+Inside the container, build the packages. The `navigation_resources` package installs the shared hardware launch resources and navigation uses the registered node executables, so running it does not depend on the source directory layout:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-up-to navigation_nodes handle_nodes wristband_nodes --symlink-install
+source install/local_setup.bash
+mkdir -p /workspace/maps
+```
+
+To map and navigate simultaneously, start the hardware launch in mapping mode:
+
+```bash
+ros2 launch navigation_nodes navigation_hardware.launch.py mode:=mapping database_path:=/workspace/maps/lab.db
+```
+
+This allows a new database and starts Nav2 while RTAB-Map builds the map. Initially drive manually using the second-terminal commands below. Stop teleop before sending navigation goals into mapped areas. Stop the hardware launch with Ctrl+C to finish saving the database. Mapping mode can also extend an existing database. The default `mode:=localisation` requires a saved map and keeps it fixed. Handle and wristband options work in either mode.
+
+Alternatively, create a map separately before navigating:
+
+```bash
+ros2 launch /workspace/ros/src/autonomy/slam/launch/mapping.launch.py database_path:=/workspace/maps/lab.db filter_dynamic_objects:=false
+```
+
+The base launch enables the motors automatically after the driver subscriber is available. Pass `enable_motors:=false` to keep them disabled at startup. With `start_base:=false`, the hardware launch neither starts the driver nor enables its motors.
+
+In a second host terminal, enter the same container and start keyboard control:
+
+```bash
+docker exec -it navigoat-dev bash
+source /opt/ros/jazzy/setup.bash
+source /workspace/install/local_setup.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p speed:=0.15 -p turn:=0.3
+```
+
+Drive around the environment, return near the starting pose and stop. Close teleop, then stop mapping with Ctrl+C so RTAB-Map finishes saving its database. Start navigation in the first terminal:
+
+```bash
+ros2 launch navigation_nodes navigation_hardware.launch.py database_path:=/workspace/maps/lab.db
+```
+
+The initial pose defaults to the map origin. If starting elsewhere, pass `initial_pose:="1.0 2.0 0 0 0 1.57"` with the approximate map pose in metres and radians, or use **2D Pose Estimate** in RViz. Verify that the robot and live obstacles align with the saved map before sending a goal. The RViz navigation goal tool sends goals to Nav2.
+
+The handle and wristband are optional. Enable them with `start_handle:=true start_wristband:=true`. By default, the handle receives `/navigation/turn_feedback` and the wristband receives `/navigation/proximity_feedback`. Override `handle_feedback_topic` or `wristband_feedback_topic` to swap these. Navigation does not currently use `/handle/held` as a movement interlock. Real people feedback requires the separate people tracker and camera to be running.
+
+Before driving, check the map transform, filtered lidar and Nav2 state in the second terminal:
+
+```bash
+ros2 run tf2_ros tf2_echo map base_link
+```
+
+After stopping that command with Ctrl+C:
+
+```bash
+ros2 topic hz /navigation/cloud
+```
+
+Stop that command too, then check Nav2 and watch navigation status:
+
+```bash
+ros2 lifecycle get /bt_navigator
+ros2 topic echo /navigation/status
+```
+
+Nav2 should report `active`. Enable the motors again if necessary using the command above. Save the current position and return to it later with:
+
+```bash
+ros2 topic pub --once /navigation/save_place std_msgs/msg/String "{data: start}"
+ros2 topic pub --once /navigation/goto std_msgs/msg/String "{data: start}"
+```
+
+Saved places default to `/workspace/maps/lab_places.yaml`, beside the map. Cancel a navigation goal with:
+
+```bash
+ros2 topic pub --once /navigation/cancel std_msgs/msg/String "{data: ''}"
+```
+
+Disable the base motors independently with:
+
+```bash
+ros2 topic pub --once /cmd_motor_state p2os_msgs/msg/MotorState "{state: 0}"
+```
+
+The hardware Nav2 configuration uses unstamped `/cmd_vel` for the Pioneer driver and `/odom` for odometry. Both costmaps and the collision monitor use `/navigation/cloud`, made from the raw lidar after transforming it into `base_link` and removing floor and robot-body returns. Raw lidar remains available to SLAM. The footprint and body filter initially use the same 0.60 m by 0.52 m bounds as simulation. Measure the actual robot, including attachments, before driving and adjust the costmap footprints in `config/nav2_params.yaml` and the filter's `half_length` and `half_width` parameters together. Lidar mounting arguments (`lidar_x`, `lidar_y`, `lidar_z`, `lidar_roll`, `lidar_pitch`, `lidar_yaw`) are passed through to the hardware robot model.
+
 ## Testing in Gazebo
 
 ### 1. Make a map
