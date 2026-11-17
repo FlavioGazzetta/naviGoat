@@ -2,7 +2,8 @@
 
 ## Setup
 
-From the repository root:
+From the repository root:ros2 topic pub --once /cmd_motor_state p2os_msgs/msg/MotorState "{state: 1}"
+
 
 ```bash
 git submodule update --init --recursive
@@ -52,3 +53,18 @@ ros2 launch /workspace/ros/src/autonomy/slam/launch/lidar_test.launch.py
 ```
 
 Movement and drift testing can be done with `odometry:=icp`.
+
+
+
+## garbage
+
+to publish a goal position
+
+```bash
+ros2 topic pub --once /navigation/goto_point geometry_msgs/msg/PointStamped "{header: {frame_id: map}, point: {x: 0.5, y: 0.0}}"
+```
+
+to enable the motors 
+```bash
+ros2 topic pub --once /cmd_motor_state p2os_msgs/msg/MotorState "{state: 1}"
+```
