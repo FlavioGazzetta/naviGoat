@@ -2,7 +2,8 @@
 
 ## Setup
 
-From the repository root:
+From the repository root:ros2 topic pub --once /cmd_motor_state p2os_msgs/msg/MotorState "{state: 1}"
+
 
 ```bash
 git submodule update --init --recursive
@@ -52,3 +53,45 @@ ros2 launch /workspace/ros/src/autonomy/slam/launch/lidar_test.launch.py
 ```
 
 Movement and drift testing can be done with `odometry:=icp`.
+
+
+
+## garbage
+```
+docker exec -it navigoat-dev bash
+```
+
+to publish a goal position
+
+```bash
+ros2 topic pub --once /navigation/goto_point geometry_msgs/msg/PointStamped "{header: {frame_id: map}, point: {x: 0.5, y: 0.0}}"
+```
+
+to enable the motors 
+```bash
+ros2 topic pub --once /cmd_motor_state p2os_msgs/msg/MotorState "{state: 1}"
+```
+
+
+to run the mapping with the non sense parameters
+```bash
+ros2 launch /workspace/ros/src/autonomy/slam/launch/mapping.launch.py \
+  database_path:=/workspace/ros/src/bringup/maps/<new_name>.db \
+  odom_frame_id:=odom \
+  rviz:=false
+```
+
+
+
+## TO move later (navigation stuff)
+run basic nav2 with our parameters
+```bash
+ros2 launch nav2_bringup navigation_launch.py \
+  params_file:=/workspace/ros/src/autonomy/navigation/config/nav2_params.yaml \
+  use_sim_time:=false use_composition:=False
+```
+run the custom nav node
+```bash
+ros2 launch /workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation.launch.py \
+  places_file:=/workspace/ros/src/bringup/maps/fresh2_places.yaml
+```

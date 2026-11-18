@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import AppendEnvironmentVariable, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import AppendEnvironmentVariable, DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.substitutions import Command, PathJoinSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -13,7 +13,7 @@ def generate_launch_description():
     simulation_dir = os.path.dirname(os.path.dirname(__file__))
     # value_type=str: the URDF is text. Without it, launch reads it as YAML and fails on any ": " in it, comments included.
     robot_description = ParameterValue(
-        Command(['xacro ', os.path.join(simulation_dir, 'description', 'pioneer3at_lidar.xacro')]), value_type=str)
+        Command(['xacro ', os.path.join(simulation_dir, 'description', 'pioneer3at_lidar.xacro'), ' use_rgbd:=', LaunchConfiguration('use_rgbd')]), value_type=str)
 
     world_path = PathJoinSubstitution([
         simulation_dir,
@@ -22,6 +22,7 @@ def generate_launch_description():
     ])
 
     return LaunchDescription([
+        DeclareLaunchArgument('use_rgbd', default_value='true'),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(p2os_share)),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(simulation_dir, 'models')),
         ExecuteProcess(
@@ -58,13 +59,6 @@ def generate_launch_description():
             package='ros_gz_bridge',
             executable='parameter_bridge',
             parameters=[{'config_file': os.path.join(simulation_dir, 'config', 'gazebo_bridge.yaml')}],
-            output='screen',
-        ),
-        Node(
-            package='rtabmap_util',
-            executable='point_cloud_xyz',
-            parameters=[{'use_sim_time': True, 'filter_nans': True}],
-            remappings=[('depth/image', '/camera/depth_registered/image_rect'), ('depth/camera_info', '/camera/color/camera_info'), ('cloud', '/camera/points')],
             output='screen',
         ),
     ])

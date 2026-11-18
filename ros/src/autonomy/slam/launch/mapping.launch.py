@@ -33,7 +33,7 @@ def generate_launch_description():
         DeclareLaunchArgument('start_lidar', default_value='true'),
         DeclareLaunchArgument('start_camera', default_value='false'),
         DeclareLaunchArgument('use_rgbd', default_value='false'),
-        DeclareLaunchArgument('filter_dynamic_objects', default_value='true'),
+        DeclareLaunchArgument('filter', default_value='deskew', choices=['object', 'deskew', 'none']),
         DeclareLaunchArgument('rviz', default_value='true'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('p2os_bringup'), 'launch', 'p2os_driver_launch.py'])),
@@ -78,7 +78,7 @@ def generate_launch_description():
             name='lidar_deskewing',
             parameters=[{'fixed_frame_id': 'odom'}],
             remappings=[('input_cloud', '/unilidar/cloud')],
-            condition=IfCondition(LaunchConfiguration('filter_dynamic_objects')),
+            condition=IfCondition(PythonExpression(["'", LaunchConfiguration('filter'), "' != 'none'"])),
             output='screen',
         ),
         ExecuteProcess( # filtering out dynamic objects from the point cloud such as moving people
@@ -90,7 +90,7 @@ def generate_launch_description():
                 '--fixed-frame', 'odom',
                 '--range-window', '3',
             ],
-            condition=IfCondition(LaunchConfiguration('filter_dynamic_objects')),
+            condition=IfCondition(PythonExpression(["'", LaunchConfiguration('filter'), "' == 'object'"])),
             output='screen',
         ),
         IncludeLaunchDescription(
@@ -99,7 +99,7 @@ def generate_launch_description():
                 'database_path': LaunchConfiguration('database_path'),
                 'config_file': os.path.join(slam_dir, 'config', 'rtabmap_hardware.yaml'),
                 'odom_frame_id': LaunchConfiguration('odom_frame_id'),
-                'scan_cloud_topic': PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter_dynamic_objects'), "'.lower() in ('true', '1') else '/unilidar/cloud'"]),
+                'scan_cloud_topic': PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter'), "' == 'object' else '/unilidar/cloud/deskewed' if '", LaunchConfiguration('filter'), "' == 'deskew' else '/unilidar/cloud'"]),
                 'imu_topic': '/unilidar/imu',
                 'use_rgbd': LaunchConfiguration('use_rgbd'),
             }.items(),
