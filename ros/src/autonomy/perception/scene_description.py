@@ -86,6 +86,10 @@ def collage(frame, parts):
     return canvas
 
 
+# A description is worth waiting for: Claude's is much better than the local model's, and a picture over a slow
+# connection can take longer than the 4 s that commands get (llm.CLOUD_TIMEOUT).
+CLOUD_TIMEOUT = 10.0
+
 # The two lengths: the short one by default, the long one when the user asks for the scene "in detail".
 # (how long, how much detail, the most sentences kept, the local model's token limit)
 SHORT = ('Answer in one or two short spoken sentences, 25 words at most in all.',
@@ -106,7 +110,7 @@ def describe(model, frame, detail=False):
     where = ' '.join(f'The {side} part is a close-up of what is {spot}.' for side, (_, spot) in zip(sides, parts))
     prompt = f'Describe what is in front of me. The top part of the picture is the whole view. {where}'
     image = to_jpeg(collage(frame, parts))
-    answer = llm.ask_cloud(system, prompt, image=image)
+    answer = llm.ask_cloud(system, prompt, image=image, timeout=CLOUD_TIMEOUT)
     if answer is None:  # no key, offline, or Claude was slow
         answer = llm.ask_local(system, prompt, image=image, max_tokens=local_tokens, timeout=90, model=model)
     if answer is None:

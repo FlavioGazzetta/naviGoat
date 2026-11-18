@@ -77,9 +77,9 @@ def cloud_available():
             and time.monotonic() >= _cloud_off_until)
 
 
-def ask_cloud(system, text, image=None, schema=None, max_tokens=1024):
+def ask_cloud(system, text, image=None, schema=None, max_tokens=1024, timeout=CLOUD_TIMEOUT):
     """Claude's answer as text (JSON text when a schema is given), or None: no key, offline, slow, refused or an error.
-    image is a base64 JPEG."""
+    image is a base64 JPEG. timeout: seconds to wait for Claude before giving up."""
     global _cloud_off_until, _cloud_disabled
     if not cloud_available():
         return None
@@ -91,9 +91,9 @@ def ask_cloud(system, text, image=None, schema=None, max_tokens=1024):
     if schema:
         output_config['format'] = {'type': 'json_schema', 'schema': schema}
     call = _pool.submit(_client.messages.create, model=CLOUD_MODEL, max_tokens=max_tokens, system=system,
-                        messages=[{'role': 'user', 'content': content}], output_config=output_config)
+                        messages=[{'role': 'user', 'content': content}], output_config=output_config, timeout=timeout)
     try:
-        response = call.result(timeout=CLOUD_TIMEOUT)  # a hard limit: the client's own timeout misses the address lookup
+        response = call.result(timeout=timeout)  # a hard limit: the client's own timeout misses the address lookup
     except concurrent.futures.TimeoutError:
         _went_offline()
         return None
