@@ -25,6 +25,7 @@ the user says "stop", "exit manual mode" or "stop following". Following also end
 """
 
 import json
+import re
 import threading
 import uuid
 
@@ -47,9 +48,13 @@ def mode_messages(mode, target=''):
     return [('mode_topic', mode)]  # perception stays idle for any mode that is not its own
 
 
-def describe_messages():
+# "Describe what's in front of me in detail": the long description. Without these words it is the short one.
+DETAIL = re.compile(r"\b(in (more |great |full )?detail|detailed|in depth|thoroughly|everything)\b")
+
+
+def describe_messages(detail=False):
     # The description node ignores a mode it is already in, so leave it first to be able to describe again.
-    return [('mode_topic', 'idle'), ('mode_topic', 'description')]
+    return [('mode_topic', 'idle'), ('mode_topic', 'description detail' if detail else 'description')]
 
 
 def mode_payload(mode, target='', intent='', stop=False, request_id=''):
@@ -104,7 +109,7 @@ def main():
                 return  # superseded before publication
             if decision.forward:
                 if DESCRIBE.search(decision.forward):
-                    send(describe_messages())
+                    send(describe_messages(bool(DETAIL.search(decision.forward.lower()))))
                 else:
                     response_pub.publish(String(data=CANNOT_ANSWER))
             if decision.save_place:
