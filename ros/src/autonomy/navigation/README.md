@@ -92,29 +92,22 @@ If you change `social_layer.cpp` you need to build again and restart Nav2. The P
 
 ### 1. Start the container (on the Jetson)
 
-From the repository root on the Jetson. The base and the lidar are given by their `/dev/serial/by-id/` names, because the
-`/dev/ttyUSB0` / `/dev/ttyUSB1` numbers swap between boots (see the [SLAM README](../slam/README.md#setup-details)).
-
-**Without social nav** (no camera needed):
+From the repository root on the Jetson. One container for everything (with or without social nav):
 
 ```bash
-xhost +si:localuser:root
-docker run --rm -it --name navigoat-dev --network=host \
-  --device=/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0:/dev/unilidar \
-  --device=/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0:/dev/pioneer \
-  -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
-```
-
-**With social nav**: the people tracker needs the camera, the GPU and Pete's extras, so build the image with
-`--build-arg PETE=true` first (see the [perception README](../perception/README.md#setup)). The camera needs `--privileged
--v /dev:/dev`, which also shows the Jetson's own `/dev`, so `/dev/pioneer` and `/dev/unilidar` don't exist in this
-container: the ports are passed to the launch instead (step 3).
-
-```bash
-xhost +si:localuser:root
 docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus all --privileged -v /dev:/dev \
   -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 ```
+
+- `--privileged -v /dev:/dev` gives the container all the Jetson's USB devices: the base, the lidar and the camera. The
+  launch finds the base and the lidar by themselves through their `/dev/serial/by-id/` names, which always point at the
+  right adapter, even when the `/dev/ttyUSB0` / `/dev/ttyUSB1` numbers swap after a reboot.
+- `--runtime nvidia --gpus all` is for social nav (the YOLO model behind the people tracker). Social nav also needs the
+  image built with Pete's extras: `docker build -f docker/Dockerfile.dev --build-arg PETE=true -t navigoat:dev .` (see
+  the [perception README](../perception/README.md#setup)). Without social nav, any `navigoat:dev` image works.
+- `-e DISPLAY` and the `/tmp/.X11-unix` mount only matter for windows on the Jetson's own screen (`rviz:=true`). Then
+  also run `xhost +si:localuser:root` once in a terminal on the Jetson's screen (logged in there, not over SSH). With
+  RViz on the laptop (step 4) you can skip that.
 
 Open more terminals in the same container with `docker exec -it navigoat-dev bash`.
 
@@ -134,12 +127,6 @@ In every terminal:
 source /workspace/install/setup.bash
 NAV=/workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_robot.launch.py
 MAP=/workspace/ros/src/bringup/maps/lab.db   # a new name makes a new map, an existing one is continued / reused
-```
-
-In the social nav container (`-v /dev:/dev`), also set the ports and add `$PORTS` to every `ros2 launch $NAV` below:
-
-```bash
-PORTS="pioneer_port:=/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0 lidar_port:=/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0"
 ```
 
 [navigation_robot.launch.py](navigation_nodes/launch/navigation_robot.launch.py) starts the base (and turns the motors on
@@ -165,7 +152,7 @@ drivers on the same serial port, and neither works.
 - **Navigating**: save places (`/navigation/save_place`) and send goals as in [the Gazebo tests](#testing-in-gazebo). The
   places are kept next to the map: `lab.db` → `lab_places.yaml`.
 - **Social nav**: `social:=true` also starts the camera, the YOLO server and Enid's people tracker (only those: no Qwen,
-  scene description or middleman), and people_node puts the people on `/people`. It needs the social nav container (step
+  scene description or middleman), and people_node puts the people on `/people`. It needs the image built with Pete's extras (step
   1). Without it, the social layer stays in the costmaps but has no people to draw. Don't run it together with
   `pete.launch.py people:=true` (or the mapping launch's `start_camera:=true`): they start the same camera and YOLO
   server, and only one program can open the camera.
@@ -185,12 +172,12 @@ default, set it to `false` (e.g. `enable_motors:=false`). They can be combined i
 | `database_path` | a path to a `.db` file | **required**, no default | the map. A new file makes a new map; an existing one is continued (`mapping`) or navigated on (`localisation`) |
 | `mode` | `mapping`, `localisation` | `mapping` | `mapping` builds the map while you drive. `localisation` navigates on a finished map without changing it |
 | `teleop` | `true`, `false` | `false` | `true` leaves Nav2 out, so the keyboard has `/cmd_vel` to itself. Use it with `mapping` |
-| `social` | `true`, `false` | `false` | `true` starts the camera, YOLO server and people tracker for social nav. Needs the social nav container |
+| `social` | `true`, `false` | `false` | `true` starts the camera, YOLO server and people tracker for social nav. Needs the image built with `PETE=true` (step 1) |
 | `enable_motors` | `true`, `false` | `true` | `false` leaves the motors off (the robot can't move until you send `/cmd_motor_state` `{state: 1}`) |
 | `filter` | `object`, `deskew`, `none` | `object` | what RTAB-Map gets from the lidar. `object`: moving people left out of the map. `deskew`: scans corrected for the robot's motion, people included. `none`: raw scans. The costmaps always see everything |
 | `rviz` | `true`, `false` | `false` | `true` opens RTAB-Map's RViz on the Jetson. Heavy: better run RViz on the laptop (step 4) |
-| `pioneer_port` | a serial port | `/dev/pioneer` | the base. In the social nav container use `$PORTS`. If the base doesn't connect (`SYNC failed`, `Setup() failed`), the ports may be swapped |
-| `lidar_port` | a serial port | `/dev/unilidar` | the lidar. Same as above |
+| `pioneer_port` | a serial port | found by itself: `/dev/pioneer` if it exists, otherwise the base's `/dev/serial/by-id/` name | the base. Only set it if the base doesn't connect (`SYNC failed`, `Setup() failed`): check `ls -l /dev/serial/by-id/` |
+| `lidar_port` | a serial port | found by itself: `/dev/unilidar` if it exists, otherwise the lidar's `/dev/serial/by-id/` name | the lidar. Same as above |
 | `places_file` | a path to a `.yaml` file | next to the map: `lab.db` → `lab_places.yaml` | where saved places are kept |
 
 ### 4. RViz on the laptop

@@ -11,9 +11,10 @@ Map first (mode:=mapping, the default), then navigate on the saved map:
 The places are kept next to the map: lab.db -> lab_places.yaml. Only save places in localisation mode, on a finished
 map: in mapping mode the map can still shift.
 
-If the base or the lidar don't connect (SYNC failed, Setup() failed), the container's /dev/ttyUSB numbers are probably
-swapped: add pioneer_port:=/dev/unilidar lidar_port:=/dev/pioneer, or recreate the container with the
-/dev/serial/by-id names (see slam/README.md).
+The base and lidar ports are found by themselves: /dev/pioneer and /dev/unilidar if the container maps them, otherwise
+the /dev/serial/by-id/ names (container started with -v /dev:/dev, as in the navigation README). If the base or the
+lidar still don't connect (SYNC failed, Setup() failed), check `ls -l /dev/serial/by-id/` and set pioneer_port:= and
+lidar_port:= by hand.
 """
 
 # everything for the real robot in one command: the base from bringup (so the motors get turned on), the team's
@@ -32,6 +33,14 @@ from launch_ros.substitutions import FindPackageShare
 LAUNCH_DIR = os.path.dirname(os.path.realpath(__file__))  # navigation_nodes/launch
 SRC_DIR = os.path.abspath(os.path.join(LAUNCH_DIR, '..', '..', '..', '..'))  # ros/src
 NAV2_PARAMS = os.path.join(SRC_DIR, 'autonomy', 'navigation', 'config', 'nav2_params.yaml')
+# The serial ports. /dev/pioneer and /dev/unilidar only exist when the container maps them (--device ...:/dev/pioneer).
+# With -v /dev:/dev (the README's container, for the camera) they don't, so use the /dev/serial/by-id/ names: they always
+# point at the right USB adapter, whichever /dev/ttyUSB number it got at boot
+BY_ID = '/dev/serial/by-id/'
+PIONEER_BY_ID = BY_ID + 'usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0'
+LIDAR_BY_ID = BY_ID + 'usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0'
+PIONEER_PORT = '/dev/pioneer' if os.path.exists('/dev/pioneer') else PIONEER_BY_ID
+LIDAR_PORT = '/dev/unilidar' if os.path.exists('/dev/unilidar') else LIDAR_BY_ID
 PERCEPTION_DIR = os.path.join(SRC_DIR, 'autonomy', 'perception')
 PEOPLE_DIR = os.path.join(PERCEPTION_DIR, 'social_perception', 'femto_id_velocity_tracker')
 
@@ -72,8 +81,8 @@ def generate_launch_description():
         DeclareLaunchArgument('database_path', description='RTAB-Map database: a new file to make a map, an existing one to continue or navigate on it'),
         DeclareLaunchArgument('mode', default_value='mapping', choices=['mapping', 'localisation']),
         DeclareLaunchArgument('places_file', default_value='', description='default: next to the map, <map>_places.yaml'),
-        DeclareLaunchArgument('pioneer_port', default_value='/dev/pioneer'),
-        DeclareLaunchArgument('lidar_port', default_value='/dev/unilidar'),
+        DeclareLaunchArgument('pioneer_port', default_value=PIONEER_PORT, description='default: /dev/pioneer if it exists, else the by-id name'),
+        DeclareLaunchArgument('lidar_port', default_value=LIDAR_PORT, description='default: /dev/unilidar if it exists, else the by-id name'),
         DeclareLaunchArgument('filter', default_value='object', choices=['object', 'deskew', 'none'],
                               description='object: moving people are left out of the map (the costmaps still see them)'),
         DeclareLaunchArgument('enable_motors', default_value='true', choices=['true', 'false']),
