@@ -14,5 +14,5 @@ rtabmap:
     Grid/MaxGroundHeight: '0.1'
     Grid/MaxObstacleHeight: '1.5'  # keeps desks, people and walls, drops the ceiling (~2.6 m above base_link)
     Grid/RayTracing: 'true'
-    Grid/NoiseFilteringRadius: '0.1'
+    Grid/NoiseFilteringRadius: '0.0'  # off: one L1 scan is only ~2k points, so the filter deleted most far-away obstacles
     Grid/NoiseFilteringMinNeighbors: '3'

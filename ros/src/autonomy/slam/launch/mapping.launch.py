@@ -76,7 +76,7 @@ def generate_launch_description():
             package='rtabmap_util',
             executable='lidar_deskewing',
             name='lidar_deskewing',
-            parameters=[{'fixed_frame_id': 'odom'}],
+            parameters=[{'fixed_frame_id': 'odom', 'wait_for_transform': 0.2}],  # the base's odom TF is only 10 Hz; the 0.01 s default made every scan fail
             remappings=[('input_cloud', '/unilidar/cloud')],
             condition=IfCondition(PythonExpression(["'", LaunchConfiguration('filter'), "' != 'none'"])),
             output='screen',

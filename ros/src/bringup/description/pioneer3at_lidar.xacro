@@ -39,15 +39,25 @@
     <child link="unilidar_lidar"/>
   </joint>
 
-  <!-- no visual to avoid collision monitor obstacle -->
+  <!-- visual only, so the camera shows in RViz. No collision geometry. Nav2 doesn't use the URDF for collisions: the
+       camera is in the footprint in nav2_params.yaml. (The simulation has its own xacro, so Gazebo is unaffected.) -->
   <link name="camera_link">
     <inertial>
       <mass value="0.1"/>
       <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
     </inertial>
+    <visual>
+      <geometry>
+        <box size="0.04 0.115 0.04"/>  <!-- roughly a Femto Bolt: 4 cm deep, 11.5 cm wide, 4 cm tall -->
+      </geometry>
+      <material name="camera_black">
+        <color rgba="0.1 0.1 0.1 1"/>
+      </material>
+    </visual>
   </link>
 
   <joint name="top_plate_camera_joint" type="fixed">
+    <!-- camera on the robot, no longer sticking out the front. Still a guess: measure x and z on the robot -->
     <origin xyz="0.20 0 0.160" rpy="0 0 0"/>
     <parent link="top_plate"/>
     <child link="camera_link"/>

@@ -2,15 +2,17 @@
 
 ## Setup
 
-From the repository root:ros2 topic pub --once /cmd_motor_state p2os_msgs/msg/MotorState "{state: 1}"
-
+From the repository root:
 
 ```bash
 git submodule update --init --recursive
 ```
 
 ```bash
-docker run --rm -it --name navigoat-dev --network=host --device=/dev/ttyUSB0:/dev/unilidar --device=/dev/ttyUSB1:/dev/pioneer -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+docker run --rm -it --name navigoat-dev --network=host \
+  --device=/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0:/dev/unilidar \
+  --device=/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0:/dev/pioneer \
+  -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 ```
 
 Inside the Jazzy container, build from `/workspace`:
@@ -22,17 +24,31 @@ source install/setup.bash
 
 ### Setup Details
 
-Follow the [container setup](../../../../README.md#setup). Identify serial ports:
+Follow the [container setup](../../../../README.md#setup).
+
+Don't map the devices by `/dev/ttyUSB0` / `/dev/ttyUSB1`: those numbers depend on which USB adapter the Jetson finds
+first at boot, so they swap between boots. The base driver then opens the lidar (`SYNC failed`, `Setup() failed ...
+chassis may be unreachable`) and the lidar driver opens the base. Use the `/dev/serial/by-id/` names instead, which
+always point at the same adapter:
 
 ```bash
-ls -l /dev/ttyUSB*
-``` 
-
-Add these flags when creating the docker container, replacing USB paths as needed:
-
-```bash
---device=/dev/ttyUSB0:/dev/unilidar --device=/dev/ttyUSB1:/dev/pioneer
+ls -l /dev/serial/by-id/
 ```
+
+| Adapter | Device | Map it to |
+| --- | --- | --- |
+| `usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0` | Unitree L1 lidar | `/dev/unilidar` |
+| `usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0` | Pioneer base | `/dev/pioneer` |
+
+```bash
+--device=/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0:/dev/unilidar
+--device=/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0:/dev/pioneer
+```
+
+If the adapters are replaced, the names change: check `ls -l /dev/serial/by-id/` and update them here.
+
+In a container that was already started with swapped `ttyUSB` numbers, swap them in the launch instead of restarting it:
+`pioneer_port:=/dev/unilidar lidar_port:=/dev/pioneer`.
 
 ## Run
 

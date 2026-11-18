@@ -15,12 +15,15 @@ from launch.substitutions import LaunchConfiguration
 NODES_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__))) # realpath works even with the symlink thing 
 
 
-def node(script, *params):
-    """Run one of the node scripts, giving it the launch arguments named in params as ROS parameters."""
-    # this builds the same command as typing:  python3 places_node.py --ros-args -p places_file:=... -p ...
+def node(script, *params, remaps=()):
+    """Run one of the node scripts, giving it the launch arguments named in params as ROS parameters, and renaming
+    the topics in remaps (pairs of (topic in the code, topic it really goes to))."""
+    # this builds the same command as typing:  python3 places_node.py --ros-args -p places_file:=... -r from:=to ...
     cmd = ['python3', os.path.join(NODES_DIR, script), '--ros-args']
     for name in params:
         cmd += ['-p', [f'{name}:=', LaunchConfiguration(name)]]
+    for old, new in remaps:
+        cmd += ['-r', f'{old}:={new}']
     return ExecuteProcess(cmd=cmd, output='screen')  # output='screen' shows the node's prints in this terminal
 
 
@@ -37,5 +40,9 @@ def generate_launch_description():
         DeclareLaunchArgument('tracker_domain', default_value='-1', description='ROS domain of the people tracker, -1 = ours'),
         node('places_node.py', 'places_file', 'use_sim_time', 'map_frame', 'base_frame'),
         node('people_node.py', 'use_sim_time', 'map_frame', 'camera_frame', 'fake_people', 'tracker_domain'),
-        node('feedback_node.py', 'use_sim_time', 'map_frame', 'base_frame'),
+        # vibrations go straight to the devices (interaction/README.md): turns -> handle, people nearby -> wristband
+        node('feedback_node.py', 'use_sim_time', 'map_frame', 'base_frame', remaps=[
+            ('/navigation/turn_feedback', '/handle/vibration'),
+            ('/navigation/proximity_feedback', '/wristband/vibration'),
+        ]),
     ])

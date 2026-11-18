@@ -153,7 +153,7 @@ controller_server:
         cost_weight: 3.81
         near_collision_cost: 253
         critical_cost: 300.0
-        consider_footprint: false
+        consider_footprint: true  # check the whole footprint (camera nose included), not just the centre
         collision_cost: 1000000.0
         near_goal_distance: 1.0
         trajectory_point_step: 2
@@ -197,7 +197,9 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.22
+      # Pioneer 3-AT body (~0.50 x 0.50 m, base_link in the middle), ~3 cm margin. x forward, y left.
+      # The camera is no longer sticking out the front, so no nose. If something is mounted past the body again, add it here.
+      footprint: "[[0.28, 0.28], [-0.28, 0.28], [-0.28, -0.28], [0.28, -0.28]]"
       plugins: ["voxel_layer", "social_layer", "inflation_layer"]
       social_layer:  # the people from people_node.py and the social rules: see autonomy/navigation/README.md
         plugin: "social_layer::SocialLayer"
@@ -222,13 +224,15 @@ local_costmap:
         enabled: True
         publish_voxel_map: True
         origin_z: 0.0
-        z_resolution: 0.05
+        z_resolution: 0.1   # 16 voxels x 0.1 m = 0 to 1.6 m. At 0.05 the grid stopped at 0.8 m, and the L1 only sees from ~0.54 m up
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
         observation_sources: lidar
         lidar:
-          topic: /unilidar/cloud_static
+          # live cloud, so moving obstacles show up and get cleared. Not /unilidar/cloud_static: that one has moving
+          # objects removed, and only exists with mapping.launch.py filter:=object
+          topic: /unilidar/cloud/deskewed
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -249,7 +253,9 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.22
+      # Pioneer 3-AT body (~0.50 x 0.50 m, base_link in the middle), ~3 cm margin. x forward, y left.
+      # The camera is no longer sticking out the front, so no nose. If something is mounted past the body again, add it here.
+      footprint: "[[0.28, 0.28], [-0.28, 0.28], [-0.28, -0.28], [0.28, -0.28]]"
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "social_layer", "inflation_layer"]
@@ -272,7 +278,7 @@ global_costmap:
         enabled: True
         observation_sources: lidar
         lidar:
-          topic: /unilidar/cloud_static
+          topic: /unilidar/cloud/deskewed  # live cloud, see the local costmap
           max_obstacle_height: 2.0
           clearing: True
           marking: True
