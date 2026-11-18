@@ -106,7 +106,7 @@ controller_server:
       az_max: 3.5
       vx_std: 0.2
       vy_std: 0.2
-      wz_std: 0.4
+      wz_std: 0.6  # was 0.4: try more turning motions, so in-place turns are found more easily
       vx_max: 0.5
       vx_min: -0.35
       vy_max: 0.5
@@ -197,9 +197,9 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      # Pioneer 3-AT body (~0.50 x 0.50 m, base_link in the middle), ~3 cm margin. x forward, y left.
+      # Pioneer 3-AT body (~0.51 x 0.50 m, base_link in the middle), ~1 cm margin. x forward, y left.
       # The camera is no longer sticking out the front, so no nose. If something is mounted past the body again, add it here.
-      footprint: "[[0.28, 0.28], [-0.28, 0.28], [-0.28, -0.28], [0.28, -0.28]]"
+      footprint: "[[0.26, 0.26], [-0.26, 0.26], [-0.26, -0.26], [0.26, -0.26]]"
       plugins: ["voxel_layer", "social_layer", "inflation_layer"]
       social_layer:  # the people from people_node.py and the social rules: see autonomy/navigation/README.md
         plugin: "social_layer::SocialLayer"
@@ -217,8 +217,8 @@ local_costmap:
         prediction_cost: 200        # cost right in front of a walker, fading to 0 at the end of their predicted path
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.70
+        cost_scaling_factor: 5.0  # was 3.0: cost drops off faster away from obstacles
+        inflation_radius: 0.45  # was 0.70: narrow corridors aren't costly wall to wall
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -228,7 +228,18 @@ local_costmap:
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
-        observation_sources: lidar
+        observation_sources: lidar lidar_clearing
+        # lidar_clearing: the same cloud, clearing only, with the points up to the ceiling. Most of the L1's beams go up
+        # to the ceiling (~2.6 m), and lidar drops everything above 2.0 m, so without this almost nothing clears the
+        # obstacles it marked: they pile up around the robot. These beams clear what they pass through, and mark nothing
+        lidar_clearing:
+          topic: /unilidar/cloud/deskewed
+          max_obstacle_height: 4.0
+          clearing: True
+          marking: False
+          data_type: "PointCloud2"
+          raytrace_max_range: 5.0
+          raytrace_min_range: 0.0
         lidar:
           # live cloud, so moving obstacles show up and get cleared. Not /unilidar/cloud_static: that one has moving
           # objects removed, and only exists with mapping.launch.py filter:=object
@@ -253,9 +264,9 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      # Pioneer 3-AT body (~0.50 x 0.50 m, base_link in the middle), ~3 cm margin. x forward, y left.
+      # Pioneer 3-AT body (~0.51 x 0.50 m, base_link in the middle), ~1 cm margin. x forward, y left.
       # The camera is no longer sticking out the front, so no nose. If something is mounted past the body again, add it here.
-      footprint: "[[0.28, 0.28], [-0.28, 0.28], [-0.28, -0.28], [0.28, -0.28]]"
+      footprint: "[[0.26, 0.26], [-0.26, 0.26], [-0.26, -0.26], [0.26, -0.26]]"
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "social_layer", "inflation_layer"]
@@ -276,7 +287,16 @@ global_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        observation_sources: lidar
+        observation_sources: lidar lidar_clearing
+        # lidar_clearing: clearing only, with the ceiling points (see the local costmap)
+        lidar_clearing:
+          topic: /unilidar/cloud/deskewed
+          max_obstacle_height: 4.0
+          clearing: True
+          marking: False
+          data_type: "PointCloud2"
+          raytrace_max_range: 5.0
+          raytrace_min_range: 0.0
         lidar:
           topic: /unilidar/cloud/deskewed  # live cloud, see the local costmap
           max_obstacle_height: 2.0
@@ -293,8 +313,8 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.7
+        cost_scaling_factor: 5.0  # was 3.0
+        inflation_radius: 0.45  # was 0.7
       always_send_full_costmap: True
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.
