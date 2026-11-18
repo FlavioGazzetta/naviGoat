@@ -18,10 +18,11 @@ fi
 ENV_FILE=()
 if [ -f ~/pete.env ]; then ENV_FILE=(--env-file ~/pete.env); else echo "No ~/pete.env: Pete will use the local model only."; fi
 mkdir -p ~/.nv-cache  # Ollama's compiled GPU code, kept between runs
+mkdir -p ~/.local/share/navigoat  # the GPS layer's saved place look-ups, kept between runs (gps:=true)
 
 docker rm -f navigoat-dev >/dev/null 2>&1
 exec docker run --rm -it --name navigoat-dev --network=host --ipc=host --runtime nvidia --gpus all \
-  --privileged -v /dev:/dev -v "$REPO:/workspace" -v ~/.nv-cache:/root/.nv \
+  --privileged -v /dev:/dev -v "$REPO:/workspace" -v ~/.nv-cache:/root/.nv -v ~/.local/share/navigoat:/root/.local/share/navigoat \
   -v "$RUNTIME_DIR/pulse:$RUNTIME_DIR/pulse" -e PULSE_SERVER=unix:$RUNTIME_DIR/pulse/native \
   "${ENV_FILE[@]}" navigoat:dev bash -c "(ollama serve > /tmp/ollama.log 2>&1 &); source /opt/ros/jazzy/setup.bash && \
     ros2 launch /workspace/ros/src/core/launch/pete.launch.py $*"
