@@ -22,12 +22,23 @@ All are `std_msgs/String`. Every name is a ROS parameter (the first column), so 
 | `status_topic` | `/object_status` | in | perception's search result, `found:<object>` or `not_found:<object>`. A failed search is spoken and the mode goes back to idle |
 | `description_topic` | `/scene_description` | in | perception's description of the view. It is passed on to the response topic |
 | `done_topic` | `/middleman/done` | in | the robot reached the goal of a location, object or GPS request |
-| `middleman_mode_topic` | `/middleman/mode` | out | JSON `{"mode", "target", "intent", "stop"}` for the mode being started (follow, location, object, gps, manual, help, idle) |
+| `middleman_mode_topic` | `/middleman/mode` | out | JSON `{"mode", "target", "intent", "stop", "request_id"}` for the mode being started (follow, location, object, gps, manual, help, idle) |
+| `following_status_topic` | `/person_following/status` | in | JSON `{"request_id", "state", "event", "target_id"}` from following; matching terminal failures return the mode to idle and are spoken |
 | `save_place_topic` | `/navigation/save_place` | out | the name from "remember this place as the study". Navigation's places_node saves the robot's position under it, and "take me to the study" works afterwards |
 | `places_topic` | `/navigation/places` | in | JSON list of the names navigation has saved (latched, so earlier runs' places arrive at start). They are understood like the catalog's places, so "take me to the balcony" works after a restart, and the language model is told about them too (by name only, they have no purpose line like the catalog's) |
 | `heard_topic` | `/middleman/heard` | out | a request went to perception and there is no spoken reply: play a beep |
 
 The other parameter is `use_qwen` (default `false`): let Qwen match a need to a known place. It needs Ollama with `qwen3-vl:2b-instruct` running on `localhost:11434`. The scene description uses the same model, so they share one loaded copy, and both ask with `num_ctx` 4096 (`OLLAMA_OPTIONS` in `middleman.py` must stay equal to the one in `scene_description.py`, or Ollama reloads the model every time the two take turns).
+
+Following commands now include a unique `request_id`. The following runner
+echoes it on `/person_following/status`. A matching terminal event in state
+`IDLE` (`target_lost`, `input_stale`, `input_fault`, `unsupported_target`,
+`command_invalid`, `disabled`, `transform_unavailable`, `navigation_unavailable`,
+`navigation_failed`, or `navigation_cancel_failed`) ends that follow request and publishes its
+explanation on `/pete/response`. Progress, old-session messages and duplicates
+are ignored; following failures do not use the arrival handler. Both nodes need
+the updated code. See [the following integration test](../autonomy/person_following/README.md#lias-voicemiddleman-connection)
+for typed-speech testing without a robot.
 
 ## Running it
 
@@ -81,6 +92,7 @@ ros2 launch /workspace/ros/src/core/launch/pete.launch.py
 | `search_time` | `5.0` | seconds object detection looks for a goal |
 | `use_qwen` | `true` | as above. Here it is on by default: Ollama runs in the same container for scene description, so the middleman shares that loaded Qwen |
 | `people` | `false` | `true` also starts the people tracker (`femto_person_tracker`, publishes `/social_perception/tracks`) and its dashboard, from [social_perception](../autonomy/perception/social_perception). They use the camera Pete already runs, and the tracker uses perception's [YOLO server](../autonomy/perception/yolo_server.py) instead of loading its own model. Needs the `SOCIAL=true` image |
+| `people_max_age` | `1.0` | seconds the tracker retains a missed track; use `2.0` with person following to match its two-second loss window |
 | `people_port` | `8766` | the dashboard's port. Not 8765: that is Whisper's |
 | `voice` | `false` | `true` also starts the voice node. It needs the `VOICE=true` image and the host's sound socket (see `start_voice_ros.sh`); the voice launch file starts the middleman itself, so it is never started twice |
 | `whisper_url`, `listen`, `device` | as in the voice launch file | passed on to the voice node |
@@ -99,6 +111,9 @@ Tested: the rules, with unit tests (they cover the rules, the matching of mis-he
 
 Not tested:
 - The object search against Flavio's real `object_detection.py` (YOLO). It needs the Jetson's memory sorted out first.
-- Nothing reads `/middleman/mode` yet (follow, navigation), and nothing publishes `/middleman/done`, so "Arrived." never comes.
+- Person following consumes `/middleman/mode` and reports failures on
+  `/person_following/status`. It has an offline goal demo and a ROS runner
+  (preview by default; Nav2 actions require `--execute-nav2`). Other modes'
+  arrival reporting uses `/middleman/done`.
 - `found:<object>` is not spoken, and the object's position (`/object_mapping`) goes nowhere.
 - The object and place lists in `catalog.py` are a copy of the ones in `autonomy/perception/object_detection.py` (88 words and 84 aliases). They have to be kept equal by hand until one imports the other.

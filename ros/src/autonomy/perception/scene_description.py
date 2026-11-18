@@ -33,8 +33,8 @@ on signs. The close-ups are zoomed-in parts of the same scene, so the same thing
 once, and use the whole view to say where it is. Describe the scene itself, not the picture's layout.
 
 Your reply is read aloud to them, so:
-- Answer in two or three short spoken sentences. No markdown, lists or emoji.
-- Add a little detail where you notice it: a colour, what something looks like, smaller things like a poster on the wall.
+- {length} No markdown, lists or emoji.
+- {detail}
 - Start with the specific kind of place (a bedroom, a kitchen, an office, a corridor, a bathroom, a living room, a street, \
 a park), never just "a room". Then say what is ahead, then the useful details, saying where they are (on your left, ahead, \
 on your right).
@@ -86,22 +86,34 @@ def collage(frame, parts):
     return canvas
 
 
-def describe(model, frame):
-    """A spoken description of the image, from one collage of the whole view and close-ups of its busiest parts."""
+# The two lengths: the short one by default, the long one when the user asks for the scene "in detail".
+# (how long, how much detail, the most sentences kept, the local model's token limit)
+SHORT = ('Answer in one or two short spoken sentences, 25 words at most in all.',
+         'Name only the main things. Leave out colours, small objects and text unless they matter for moving safely.', 2, 60)
+LONG = ('Answer in four to six short spoken sentences.',
+        'Add detail where you notice it: a colour, what something looks like, what is on tables and shelves, smaller things '
+        'like a poster on the wall, and any text you can read.', 6, 200)
+
+
+def describe(model, frame, detail=False):
+    """A spoken description of the image, from one collage of the whole view and close-ups of its busiest parts.
+    detail: the long description instead of the short one."""
+    length, how_much, most_sentences, local_tokens = LONG if detail else SHORT
+    system = SYSTEM_PROMPT.replace('{length}', length).replace('{detail}', how_much)
     parts = busiest_parts(frame)
     parts.sort(key=lambda p: ['left', 'ahead', 'right'].index(next(s for s in ('left', 'ahead', 'right') if s in p[1])))  # left close-up on the left
     sides = ['bottom left', 'bottom right'] if len(parts) == 2 else ['bottom']
     where = ' '.join(f'The {side} part is a close-up of what is {spot}.' for side, (_, spot) in zip(sides, parts))
     prompt = f'Describe what is in front of me. The top part of the picture is the whole view. {where}'
     image = to_jpeg(collage(frame, parts))
-    answer = llm.ask_cloud(SYSTEM_PROMPT, prompt, image=image)
+    answer = llm.ask_cloud(system, prompt, image=image)
     if answer is None:  # no key, offline, or Claude was slow
-        answer = llm.ask_local(SYSTEM_PROMPT, prompt, image=image, max_tokens=90, timeout=90, model=model)
+        answer = llm.ask_local(system, prompt, image=image, max_tokens=local_tokens, timeout=90, model=model)
     if answer is None:
         return 'I cannot reach the vision model.'
     answer = answer.replace('*', '').replace('#', '').strip()
-    sentences = re.split(r'(?<=[.!?])\s+', answer)  # keep three sentences
-    return ' '.join(sentences[:3]) or 'Sorry, I could not describe the scene.'
+    sentences = re.split(r'(?<=[.!?])\s+', answer)
+    return ' '.join(sentences[:most_sentences]) or 'Sorry, I could not describe the scene.'
 
 
 class SceneDescription(Node):
@@ -135,10 +147,10 @@ class SceneDescription(Node):
         if mode == self.mode:
             return
         self.mode = mode
-        if mode == self.mode_name:
-            self.start_describe()
+        if mode in (self.mode_name, self.mode_name + ' detail'):  # 'description', or 'description detail' for the long one
+            self.start_describe(detail=mode.endswith(' detail'))
 
-    def start_describe(self):
+    def start_describe(self, detail=False):
         if self.frame is None:
             return self.description_pub.publish(String(data='I cannot see anything yet.'))
         if self.busy.is_set():
@@ -148,7 +160,7 @@ class SceneDescription(Node):
 
         def worker():
             try:
-                text = describe(self.vlm_model, frame)
+                text = describe(self.vlm_model, frame, detail)
                 self.get_logger().info(text)
                 self.description_pub.publish(String(data=text))
             finally:
