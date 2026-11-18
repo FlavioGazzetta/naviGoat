@@ -88,6 +88,120 @@ source install/setup.bash
 
 If you change `social_layer.cpp` you need to build again and restart Nav2. The Python files don't need a rebuild, just restart the node.
 
+## On the real robot
+
+### 1. Start the container (on the Jetson)
+
+From the repository root on the Jetson. The base and the lidar are given by their `/dev/serial/by-id/` names, because the
+`/dev/ttyUSB0` / `/dev/ttyUSB1` numbers swap between boots (see the [SLAM README](../slam/README.md#setup-details)).
+
+**Without social nav** (no camera needed):
+
+```bash
+xhost +si:localuser:root
+docker run --rm -it --name navigoat-dev --network=host \
+  --device=/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0:/dev/unilidar \
+  --device=/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0:/dev/pioneer \
+  -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+```
+
+**With social nav**: the people tracker needs the camera, the GPU and Pete's extras, so build the image with
+`--build-arg PETE=true` first (see the [perception README](../perception/README.md#setup)). The camera needs `--privileged
+-v /dev:/dev`, which also shows the Jetson's own `/dev`, so `/dev/pioneer` and `/dev/unilidar` don't exist in this
+container: the ports are passed to the launch instead (step 3).
+
+```bash
+xhost +si:localuser:root
+docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus all --privileged -v /dev:/dev \
+  -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+```
+
+Open more terminals in the same container with `docker exec -it navigoat-dev bash`.
+
+### 2. Build (once, inside the container)
+
+```bash
+cd /workspace
+colcon build --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install
+source install/setup.bash
+```
+
+### 3. Launch
+
+In every terminal:
+
+```bash
+source /workspace/install/setup.bash
+NAV=/workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_robot.launch.py
+MAP=/workspace/ros/src/bringup/maps/lab.db   # a new name makes a new map, an existing one is continued / reused
+```
+
+In the social nav container (`-v /dev:/dev`), also set the ports and add `$PORTS` to every `ros2 launch $NAV` below:
+
+```bash
+PORTS="pioneer_port:=/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_CWDZb2A4517-if00-port0 lidar_port:=/dev/serial/by-id/usb-Silicon_Labs_CP2104_USB_to_UART_Bridge_Controller_02AF3CBD-if00-port0"
+```
+
+[navigation_robot.launch.py](navigation_nodes/launch/navigation_robot.launch.py) starts the base (and turns the motors on
+once it's connected), the lidar, RTAB-Map, Nav2 and our three nodes. Run only one at a time: two launches start two base
+drivers on the same serial port, and neither works.
+
+| | Without social nav | With social nav |
+| --- | --- | --- |
+| **Make a map** | `ros2 launch $NAV database_path:=$MAP` | the same, plus in a second terminal: `ros2 launch /workspace/ros/src/core/launch/pete.launch.py people:=true follow:=false` |
+| **Navigate on a finished map** | `ros2 launch $NAV database_path:=$MAP mode:=localisation` | the same, plus in a second terminal: `ros2 launch /workspace/ros/src/core/launch/pete.launch.py people:=true follow:=false` |
+
+- **Making a map**: drive around with `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (close it before Nav2
+  drives), then Ctrl+C the launch to save the map. Don't save places yet, the map can still shift.
+- **Map with teleop, then switch to Nav2 without restarting**: add `teleop:=true`. Nav2 then starts switched off, so it
+  can't fight the keyboard over `/cmd_vel`. Drive with teleop in another terminal, then close teleop and switch Nav2 on:
+
+  ```bash
+  ros2 launch $NAV database_path:=$MAP teleop:=true
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard     # second terminal: map the room, then close it (Ctrl+C)
+
+  # switch Nav2 on (only the first time; it's off since the launch)
+  ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 0}"
+  # back to teleop: pause Nav2, then resume it when you're done
+  ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 1}"
+  ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 2}"
+  ```
+
+  The map keeps building the whole time. Goals sent while Nav2 is off fail (`failed:` on `/navigation/status`).
+- **Navigating**: save places (`/navigation/save_place`) and send goals as in [the Gazebo tests](#testing-in-gazebo). The
+  places are kept next to the map: `lab.db` → `lab_places.yaml`.
+- **Without social nav** the social layer stays in the costmaps, it just has no people to draw. With social nav,
+  `pete.launch.py people:=true` starts the camera and Enid's tracker, and people_node puts the people on `/people`.
+  `follow:=false` leaves person following out. Don't also start the camera from the mapping launch: two camera drivers on
+  one camera conflict.
+- **Everything, handle and wristband included**: `ros2 launch bringup launch.py database_path:=$MAP` (add
+  `mode:=localisation` to navigate). The handle and wristband need their own devices in the container, see the
+  [interaction README](../../interaction/README.md).
+
+Other arguments of `navigation_robot.launch.py`:
+
+| Argument | Default | What it's for |
+| --- | --- | --- |
+| `mode` | `mapping` | `localisation` to navigate on a finished map |
+| `pioneer_port`, `lidar_port` | `/dev/pioneer`, `/dev/unilidar` | the serial ports. Swap them if the base or lidar don't connect (`SYNC failed`, `Setup() failed`) |
+| `filter` | `object` | `object` keeps moving people out of the map, the costmaps still see them |
+| `enable_motors` | `true` | `false` to leave the motors off |
+| `rviz` | `false` | RTAB-Map's RViz on the Jetson. Heavy: better run RViz on the laptop |
+| `teleop` | `false` | `true` starts Nav2 switched off, for driving with teleop first (see above) |
+| `places_file` | next to the map | another places file |
+
+### 4. RViz on the laptop
+
+The laptop and the Jetson need to be on the same network (the same Wi-Fi or hotspot, or the USB cable: the Jetson is then
+`192.168.55.1`). Let the Jetson through the laptop's firewall once, then point ROS at the Jetson's address
+(`hostname -I` on the Jetson):
+
+```bash
+sudo ufw allow from <jetson address>
+export ROS_STATIC_PEERS=<jetson address>
+rviz2 -d <rviz config>
+```
+
 ## Testing in Gazebo
 
 ### 1. Make a map

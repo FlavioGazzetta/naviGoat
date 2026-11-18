@@ -25,9 +25,8 @@ import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.substitutions import FindPackageShare
-from launch.substitutions import PathJoinSubstitution
 
 LAUNCH_DIR = os.path.dirname(os.path.realpath(__file__))  # navigation_nodes/launch
 SRC_DIR = os.path.abspath(os.path.join(LAUNCH_DIR, '..', '..', '..', '..'))  # ros/src
@@ -56,6 +55,9 @@ def generate_launch_description():
                               description='object: moving people are left out of the map (the costmaps still see them)'),
         DeclareLaunchArgument('enable_motors', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('rviz', default_value='false', description="RTAB-Map's RViz on the Jetson (heavy: better on the laptop)"),
+        DeclareLaunchArgument('teleop', default_value='false', choices=['true', 'false'],
+                              description='true: Nav2 starts switched off, so you can drive with teleop (mapping) without '
+                                          'Nav2 fighting it. Switch Nav2 on later with the manage_nodes service (README)'),
 
         # the base, with the motors turned on once it's connected
         IncludeLaunchDescription(
@@ -78,10 +80,13 @@ def generate_launch_description():
                 'rviz': LaunchConfiguration('rviz'),
             }.items(),
         ),
-        # Nav2 with the real-robot params
+        # Nav2 with the real-robot params. With teleop:=true it starts switched off (autostart false): its nodes exist but
+        # don't drive or take goals, so teleop has /cmd_vel to itself. Switch it on with the lifecycle manager's
+        # manage_nodes service (command 0 = start), and off again for teleop with command 1 (pause), 2 (resume)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('nav2_bringup'), 'launch', 'navigation_launch.py'])),
-            launch_arguments={'params_file': NAV2_PARAMS, 'use_sim_time': 'false', 'use_composition': 'False'}.items(),
+            launch_arguments={'params_file': NAV2_PARAMS, 'use_sim_time': 'false', 'use_composition': 'False',
+                              'autostart': PythonExpression(["'false' if '", LaunchConfiguration('teleop'), "' == 'true' else 'true'"])}.items(),
         ),
         # and our nodes
         OpaqueFunction(function=launch_navigation_nodes),
