@@ -83,7 +83,7 @@ def generate_launch_description():
         DeclareLaunchArgument('places_file', default_value='', description='default: next to the map, <map>_places.yaml'),
         DeclareLaunchArgument('pioneer_port', default_value=PIONEER_PORT, description='default: /dev/pioneer if it exists, else the by-id name'),
         DeclareLaunchArgument('lidar_port', default_value=LIDAR_PORT, description='default: /dev/unilidar if it exists, else the by-id name'),
-        DeclareLaunchArgument('filter', default_value='object', choices=['object', 'deskew', 'none'],
+        DeclareLaunchArgument('filter', default_value='deskew', choices=['object', 'deskew', 'none'],
                               description='object: moving people are left out of the map (the costmaps still see them)'),
         DeclareLaunchArgument('enable_motors', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('rviz', default_value='false', description="RTAB-Map's RViz on the Jetson (heavy: better on the laptop)"),
