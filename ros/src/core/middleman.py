@@ -135,6 +135,10 @@ QWEN_SCHEMA = {'type': 'object', 'properties': {'mode': {'enum': list(QWEN_MODES
 # The language model links what was said to the closest stored place or object. Below this confidence the
 # answer is "not a known location/object": it need not be the exact word, but it has to be something similar.
 CONFIDENCE_THRESHOLD = 0.7
+# Claude says "" for anything that is not in the lists, and is modest about a need that several places meet: measured
+# on the Jetson, "I'm hungry" -> pret at 0.5 to 0.7, "I need to study" at 0.6, "I'm thirsty" at 0.5. At 0.7 those were
+# refused ("Say that again."). The local model keeps 0.7: it is sure of itself even when it is wrong.
+CLOUD_CONFIDENCE_THRESHOLD = 0.5
 # How close a mis-heard word must be to a stored name to count as it ("bathrom" -> bathroom). difflib ratio.
 SPELLING_CUTOFF = 0.85
 QWEN_PROMPT = """You help Pete, a guide robot at Imperial College London, work out where a person who cannot see wants to go.
@@ -143,7 +147,7 @@ Places: {locations}
 Objects: {objects}
 Examples: "I'm hungry" -> pret. "I have to study" -> abdus salam library. "I want to work out" -> ethos sports centre. "I need to pray" -> prayer room. "I need to print something" -> computer room.
 Answer with a name exactly as written in the lists, without the brackets. If what they ask for is not in the lists, answer "". A particular named place or person that is not listed (for example someone's office) is not a match: answer "".
-confidence is 0 to 1: how sure you are. Use a low number if you are guessing."""
+confidence is 0 to 1: how sure you are that the place or object you chose meets the need. When several listed places would meet it equally well (several places sell food), choose one and stay sure: that is not guessing. Use a low number only if you doubt that anything in the lists is what they want."""
 
 
 def normalise(text):
@@ -294,6 +298,8 @@ def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN
         try:
             if (answer := llm.ask_cloud(prompt, text, schema=schema, max_tokens=512)) is not None:
                 result = json.loads(answer)
+                if minimum == CONFIDENCE_THRESHOLD:  # a need; an unknown name keeps its stricter minimum
+                    minimum = CLOUD_CONFIDENCE_THRESHOLD
             elif minimum > CONFIDENCE_THRESHOLD:
                 # An unknown name ("walk me to the bottom"): the local model claims to be sure of a wrong place every time
                 # ("iphone" -> computer room, "dean office" -> office), so offline the user hears "I don't know where".
