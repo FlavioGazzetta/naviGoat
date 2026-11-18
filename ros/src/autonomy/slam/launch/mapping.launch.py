@@ -14,6 +14,8 @@ def generate_launch_description():
     slam_dir = os.path.dirname(os.path.dirname(__file__))
     robot_xacro = os.path.normpath(os.path.join(slam_dir, '..', '..', 'bringup', 'description', 'pioneer3at_lidar.xacro'))
     camera_launch = os.path.normpath(os.path.join(slam_dir, '..', '..', 'hardware', 'camera', 'launch', 'camera.launch.py'))
+    subscribe_scan_cloud = LaunchConfiguration('subscribe_scan_cloud')
+    use_lidar_scan = ["'", subscribe_scan_cloud, "'.lower() in ('true', '1')"]
     robot_description = ParameterValue(Command([FindExecutable(name='xacro'), ' ', robot_xacro,
                                                 ' lidar_x:=', LaunchConfiguration('lidar_x'), ' lidar_y:=', LaunchConfiguration('lidar_y'), ' lidar_z:=', LaunchConfiguration('lidar_z'),
                                                 ' lidar_roll:=', LaunchConfiguration('lidar_roll'), ' lidar_pitch:=', LaunchConfiguration('lidar_pitch'), ' lidar_yaw:=', LaunchConfiguration('lidar_yaw')]), value_type=str)
@@ -30,7 +32,8 @@ def generate_launch_description():
         DeclareLaunchArgument('database_path', default_value=os.path.join(slam_dir, "maps", "temp_map.db")), #later should be changed to some smart naming depending on the place we are
         DeclareLaunchArgument('odom_frame_id', default_value=''),
         DeclareLaunchArgument('start_base', default_value='true'),
-        DeclareLaunchArgument('start_lidar', default_value='true'),
+        DeclareLaunchArgument('subscribe_scan_cloud', default_value='true'),
+        DeclareLaunchArgument('start_lidar', default_value=subscribe_scan_cloud),
         DeclareLaunchArgument('start_camera', default_value='false'),
         DeclareLaunchArgument('use_rgbd', default_value='false'),
         DeclareLaunchArgument('filter', default_value='deskew', choices=['object', 'deskew', 'none']),
@@ -78,7 +81,7 @@ def generate_launch_description():
             name='lidar_deskewing',
             parameters=[{'fixed_frame_id': 'odom', 'wait_for_transform': 0.2}],  # the base's odom TF is only 10 Hz; the 0.01 s default made every scan fail
             remappings=[('input_cloud', '/unilidar/cloud')],
-            condition=IfCondition(PythonExpression(["'", LaunchConfiguration('filter'), "' != 'none'"])),
+            condition=IfCondition(PythonExpression(use_lidar_scan + [" and '", LaunchConfiguration('filter'), "' != 'none'"])),
             output='screen',
         ),
         ExecuteProcess( # filtering out dynamic objects from the point cloud such as moving people
@@ -90,7 +93,7 @@ def generate_launch_description():
                 '--fixed-frame', 'odom',
                 '--range-window', '3',
             ],
-            condition=IfCondition(PythonExpression(["'", LaunchConfiguration('filter'), "' == 'object'"])),
+            condition=IfCondition(PythonExpression(use_lidar_scan + [" and '", LaunchConfiguration('filter'), "' == 'object'"])),
             output='screen',
         ),
         IncludeLaunchDescription(
@@ -100,8 +103,9 @@ def generate_launch_description():
                 'config_file': os.path.join(slam_dir, 'config', 'rtabmap_hardware.yaml'),
                 'odom_frame_id': LaunchConfiguration('odom_frame_id'),
                 'scan_cloud_topic': PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter'), "' == 'object' else '/unilidar/cloud/deskewed' if '", LaunchConfiguration('filter'), "' == 'deskew' else '/unilidar/cloud'"]),
-                'imu_topic': '/unilidar/imu',
+                'imu_topic': PythonExpression(["'/unilidar/imu' if "] + use_lidar_scan + [" else ''"]),
                 'use_rgbd': LaunchConfiguration('use_rgbd'),
+                'subscribe_scan_cloud': subscribe_scan_cloud,
             }.items(),
         ),
         Node(

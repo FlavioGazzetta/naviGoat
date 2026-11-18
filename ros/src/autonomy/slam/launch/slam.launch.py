@@ -12,6 +12,7 @@ def launch_rtabmap(context):
     database_path = LaunchConfiguration('database_path').perform(context)
     mode = LaunchConfiguration('mode').perform(context)
     use_rgbd = LaunchConfiguration('use_rgbd').perform(context).lower() in ('true', '1')
+    subscribe_scan_cloud = LaunchConfiguration('subscribe_scan_cloud').perform(context).lower() in ('true', '1')
 
     if mode == 'localisation' and not os.path.isfile(database_path):
         raise RuntimeError(f'No saved map at {database_path}')
@@ -21,10 +22,13 @@ def launch_rtabmap(context):
         'use_sim_time': ParameterValue(LaunchConfiguration('use_sim_time'), value_type=bool),
         'odom_frame_id': ParameterValue(LaunchConfiguration('odom_frame_id'), value_type=str),
         'subscribe_rgbd': use_rgbd,
+        'subscribe_scan_cloud': subscribe_scan_cloud,
     }
 
     if use_rgbd:
         runtime_parameters['qos_image'] = 2
+        if not subscribe_scan_cloud:
+            runtime_parameters.update({'Grid/Sensor': '1', 'Reg/Strategy': '0'})
 
     parameters = [os.path.join(slam_dir, 'config', 'rtabmap.yaml'), LaunchConfiguration('config_file'), runtime_parameters]
 
@@ -79,5 +83,6 @@ def generate_launch_description():
         DeclareLaunchArgument('imu_topic', default_value=''),
         DeclareLaunchArgument('odom_frame_id', default_value=''),
         DeclareLaunchArgument('use_rgbd', default_value='false'),
+        DeclareLaunchArgument('subscribe_scan_cloud', default_value='true'),
         OpaqueFunction(function=launch_rtabmap),
     ])

@@ -1,7 +1,6 @@
 rtabmap:
   ros__parameters:
     frame_id: base_link
-    subscribe_scan_cloud: true
     subscribe_depth: false
     subscribe_rgb: false
     subscribe_odom: true
