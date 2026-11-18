@@ -148,47 +148,50 @@ drivers on the same serial port, and neither works.
 
 | | Without social nav | With social nav |
 | --- | --- | --- |
-| **Make a map** | `ros2 launch $NAV database_path:=$MAP` | the same, plus in a second terminal: `ros2 launch /workspace/ros/src/core/launch/pete.launch.py people:=true follow:=false` |
-| **Navigate on a finished map** | `ros2 launch $NAV database_path:=$MAP mode:=localisation` | the same, plus in a second terminal: `ros2 launch /workspace/ros/src/core/launch/pete.launch.py people:=true follow:=false` |
+| **Make a map** | `ros2 launch $NAV database_path:=$MAP` | `ros2 launch $NAV database_path:=$MAP social:=true` |
+| **Navigate on a finished map** | `ros2 launch $NAV database_path:=$MAP mode:=localisation` | `ros2 launch $NAV database_path:=$MAP mode:=localisation social:=true` |
 
 - **Making a map**: drive around with `ros2 run teleop_twist_keyboard teleop_twist_keyboard` (close it before Nav2
   drives), then Ctrl+C the launch to save the map. Don't save places yet, the map can still shift.
-- **Map with teleop, then switch to Nav2 without restarting**: add `teleop:=true`. Nav2 then starts switched off, so it
-  can't fight the keyboard over `/cmd_vel`. Drive with teleop in another terminal, then close teleop and switch Nav2 on:
+- **Map with teleop, then navigate**: `teleop:=true` leaves Nav2 out, so it can't fight the keyboard over `/cmd_vel`.
+  Map the room with the keyboard, Ctrl+C (that saves the map), then launch again on the same map without `teleop` to
+  navigate:
 
   ```bash
-  ros2 launch $NAV database_path:=$MAP teleop:=true
-  ros2 run teleop_twist_keyboard teleop_twist_keyboard     # second terminal: map the room, then close it (Ctrl+C)
-
-  # switch Nav2 on (only the first time; it's off since the launch)
-  ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 0}"
-  # back to teleop: pause Nav2, then resume it when you're done
-  ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 1}"
-  ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/ManageLifecycleNodes "{command: 2}"
+  ros2 launch $NAV database_path:=$MAP teleop:=true          # 1. map, no Nav2
+  ros2 run teleop_twist_keyboard teleop_twist_keyboard        #    second terminal: drive around, then Ctrl+C both
+  ros2 launch $NAV database_path:=$MAP mode:=localisation     # 2. navigate on that map, Nav2 on
   ```
-
-  The map keeps building the whole time. Goals sent while Nav2 is off fail (`failed:` on `/navigation/status`).
 - **Navigating**: save places (`/navigation/save_place`) and send goals as in [the Gazebo tests](#testing-in-gazebo). The
   places are kept next to the map: `lab.db` → `lab_places.yaml`.
-- **Without social nav** the social layer stays in the costmaps, it just has no people to draw. With social nav,
-  `pete.launch.py people:=true` starts the camera and Enid's tracker, and people_node puts the people on `/people`.
-  `follow:=false` leaves person following out. Don't also start the camera from the mapping launch: two camera drivers on
-  one camera conflict.
+- **Social nav**: `social:=true` also starts the camera, the YOLO server and Enid's people tracker (only those: no Qwen,
+  scene description or middleman), and people_node puts the people on `/people`. It needs the social nav container (step
+  1). Without it, the social layer stays in the costmaps but has no people to draw. Don't run it together with
+  `pete.launch.py people:=true` (or the mapping launch's `start_camera:=true`): they start the same camera and YOLO
+  server, and only one program can open the camera.
 - **Everything, handle and wristband included**: `ros2 launch bringup launch.py database_path:=$MAP` (add
   `mode:=localisation` to navigate). The handle and wristband need their own devices in the container, see the
   [interaction README](../../interaction/README.md).
 
-Other arguments of `navigation_robot.launch.py`:
+#### All the flags
 
-| Argument | Default | What it's for |
-| --- | --- | --- |
-| `mode` | `mapping` | `localisation` to navigate on a finished map |
-| `pioneer_port`, `lidar_port` | `/dev/pioneer`, `/dev/unilidar` | the serial ports. Swap them if the base or lidar don't connect (`SYNC failed`, `Setup() failed`) |
-| `filter` | `object` | `object` keeps moving people out of the map, the costmaps still see them |
-| `enable_motors` | `true` | `false` to leave the motors off |
-| `rviz` | `false` | RTAB-Map's RViz on the Jetson. Heavy: better run RViz on the laptop |
-| `teleop` | `false` | `true` starts Nav2 switched off, for driving with teleop first (see above) |
-| `places_file` | next to the map | another places file |
+Set a flag with `name:=value` after the launch file. Leave it out to get its default; to switch off a flag that is on by
+default, set it to `false` (e.g. `enable_motors:=false`). They can be combined in any order, e.g.
+`ros2 launch $NAV database_path:=$MAP mode:=localisation social:=true`. The same flags work on
+`ros2 launch bringup launch.py`.
+
+| Flag | Values | Default | What it does |
+| --- | --- | --- | --- |
+| `database_path` | a path to a `.db` file | **required**, no default | the map. A new file makes a new map; an existing one is continued (`mapping`) or navigated on (`localisation`) |
+| `mode` | `mapping`, `localisation` | `mapping` | `mapping` builds the map while you drive. `localisation` navigates on a finished map without changing it |
+| `teleop` | `true`, `false` | `false` | `true` leaves Nav2 out, so the keyboard has `/cmd_vel` to itself. Use it with `mapping` |
+| `social` | `true`, `false` | `false` | `true` starts the camera, YOLO server and people tracker for social nav. Needs the social nav container |
+| `enable_motors` | `true`, `false` | `true` | `false` leaves the motors off (the robot can't move until you send `/cmd_motor_state` `{state: 1}`) |
+| `filter` | `object`, `deskew`, `none` | `object` | what RTAB-Map gets from the lidar. `object`: moving people left out of the map. `deskew`: scans corrected for the robot's motion, people included. `none`: raw scans. The costmaps always see everything |
+| `rviz` | `true`, `false` | `false` | `true` opens RTAB-Map's RViz on the Jetson. Heavy: better run RViz on the laptop (step 4) |
+| `pioneer_port` | a serial port | `/dev/pioneer` | the base. In the social nav container use `$PORTS`. If the base doesn't connect (`SYNC failed`, `Setup() failed`), the ports may be swapped |
+| `lidar_port` | a serial port | `/dev/unilidar` | the lidar. Same as above |
+| `places_file` | a path to a `.yaml` file | next to the map: `lab.db` → `lab_places.yaml` | where saved places are kept |
 
 ### 4. RViz on the laptop
 

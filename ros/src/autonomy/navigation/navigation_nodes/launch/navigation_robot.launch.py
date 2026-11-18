@@ -23,14 +23,37 @@ swapped: add pioneer_port:=/dev/unilidar lidar_port:=/dev/pioneer, or recreate t
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch.conditions import IfCondition, UnlessCondition
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 LAUNCH_DIR = os.path.dirname(os.path.realpath(__file__))  # navigation_nodes/launch
 SRC_DIR = os.path.abspath(os.path.join(LAUNCH_DIR, '..', '..', '..', '..'))  # ros/src
 NAV2_PARAMS = os.path.join(SRC_DIR, 'autonomy', 'navigation', 'config', 'nav2_params.yaml')
+PERCEPTION_DIR = os.path.join(SRC_DIR, 'autonomy', 'perception')
+PEOPLE_DIR = os.path.join(PERCEPTION_DIR, 'social_perception', 'femto_id_velocity_tracker')
+
+
+def social_nav():
+    """Only what social nav needs, with social:=true: the camera, the YOLO server and Enid's people tracker, which
+    publishes /social_perception/tracks for people_node. The same three pete.launch.py people:=true starts, without
+    Qwen, scene description, object detection or the middleman. Needs the PETE=true image, the GPU and the camera."""
+    social = IfCondition(LaunchConfiguration('social'))
+    return [
+        # its own `ros2 launch`: camera.launch.py shuts down everything around it if the camera stops, and that should
+        # stop the camera side only, not mapping and Nav2
+        ExecuteProcess(cmd=['ros2', 'launch', os.path.join(SRC_DIR, 'hardware', 'camera', 'launch', 'camera.launch.py')],
+                       output='screen', condition=social),
+        # YOLO, loaded once, asked over HTTP by the tracker (http://127.0.0.1:8767)
+        ExecuteProcess(cmd=['python3', '-u', os.path.join(PERCEPTION_DIR, 'yolo_server.py')], output='screen', condition=social),
+        # the tracker, with the same options as in pete.launch.py. Its own Python (the image's SOCIAL=true layer), run from
+        # its folder so the YOLO weights saved there are reused
+        ExecuteProcess(cmd=['/opt/people_env/bin/python3', '-u', 'femto_track_people.py', '--yolo-url', 'http://127.0.0.1:8767',
+                            '--imgsz', '320', '--conf', '0.40', '--max-age', '1.0', '--no-plot'],
+                       cwd=PEOPLE_DIR, output='screen', condition=social),
+    ]
 
 
 def launch_navigation_nodes(context):
@@ -56,8 +79,11 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_motors', default_value='true', choices=['true', 'false']),
         DeclareLaunchArgument('rviz', default_value='false', description="RTAB-Map's RViz on the Jetson (heavy: better on the laptop)"),
         DeclareLaunchArgument('teleop', default_value='false', choices=['true', 'false'],
-                              description='true: Nav2 starts switched off, so you can drive with teleop (mapping) without '
-                                          'Nav2 fighting it. Switch Nav2 on later with the manage_nodes service (README)'),
+                              description='true: no Nav2, so you can map with teleop without Nav2 fighting it over /cmd_vel. '
+                                          'Ctrl+C saves the map; launch again without teleop (mode:=localisation) to navigate'),
+        DeclareLaunchArgument('social', default_value='false', choices=['true', 'false'],
+                              description='true: social nav with real people (camera, YOLO server, people tracker). Not '
+                                          'together with pete.launch.py people:=true, which starts the same ones'),
 
         # the base, with the motors turned on once it's connected
         IncludeLaunchDescription(
@@ -80,14 +106,14 @@ def generate_launch_description():
                 'rviz': LaunchConfiguration('rviz'),
             }.items(),
         ),
-        # Nav2 with the real-robot params. With teleop:=true it starts switched off (autostart false): its nodes exist but
-        # don't drive or take goals, so teleop has /cmd_vel to itself. Switch it on with the lifecycle manager's
-        # manage_nodes service (command 0 = start), and off again for teleop with command 1 (pause), 2 (resume)
+        # Nav2 with the real-robot params. Not with teleop:=true, so the keyboard has /cmd_vel to itself
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('nav2_bringup'), 'launch', 'navigation_launch.py'])),
-            launch_arguments={'params_file': NAV2_PARAMS, 'use_sim_time': 'false', 'use_composition': 'False',
-                              'autostart': PythonExpression(["'false' if '", LaunchConfiguration('teleop'), "' == 'true' else 'true'"])}.items(),
+            launch_arguments={'params_file': NAV2_PARAMS, 'use_sim_time': 'false', 'use_composition': 'False'}.items(),
+            condition=UnlessCondition(LaunchConfiguration('teleop')),
         ),
         # and our nodes
         OpaqueFunction(function=launch_navigation_nodes),
+        # with social:=true, the people for the social layer
+        *social_nav(),
     ])
