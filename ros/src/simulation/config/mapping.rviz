@@ -4,6 +4,8 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /Global Options1
+        - /Status1
         - /Path1
       Splitter Ratio: 0.5
     Tree Height: 251
@@ -65,17 +67,15 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
+        camera_color_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
         camera_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-          Value: true
         front_sonar:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        unilidar_lidar:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -141,6 +141,11 @@ Visualization Manager:
           Show Trail: false
           Value: true
         top_plate:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        unilidar_lidar:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -320,7 +325,7 @@ Visualization Manager:
       Enabled: true
       Name: Saved places
       Namespaces:
-        places: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Transient Local
@@ -332,7 +337,7 @@ Visualization Manager:
       Enabled: true
       Name: People
       Namespaces:
-        people: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -343,7 +348,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: base_link
+    Fixed Frame: map
     Frame Rate: 30
   Name: root
   Tools:

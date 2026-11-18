@@ -13,7 +13,9 @@ def include_package_launch(package, filename):
 
 def generate_launch_description():
     return LaunchDescription([
-        include_package_launch('bringup', 'base.launch.py'),
+        # base (motors on), lidar, RTAB-Map, Nav2 and the navigation nodes. It includes bringup's base.launch.py itself,
+        # so base.launch.py isn't listed here as well (two base drivers on one serial port fight). Needs database_path:=...
+        include_package_launch('navigation_nodes', 'navigation_robot.launch.py'),
         include_package_launch('handle_nodes', 'handle_launch.py'),
         include_package_launch('wristband_nodes', 'wristband_launch.py'),
     ])

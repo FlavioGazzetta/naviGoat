@@ -13,3 +13,5 @@ pete.env
 /build_host/
 /install_host/
 /log_host/
+# Local backup of superseded person-following prototypes; never commit it.
+/.local-archive/person-following-2026-11-17/

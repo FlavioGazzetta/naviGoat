@@ -52,8 +52,32 @@ Inside the container, from `/workspace`:
 ```bash
 colcon build --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install
 source install/setup.bash
-ros2 launch bringup launch.py
+ros2 launch bringup launch.py database_path:=/workspace/ros/src/bringup/maps/lab.db
 ```
+
+This starts the whole robot: the base (motors turned on once it's connected), the lidar, RTAB-Map, Nav2, the
+navigation nodes, the handle and the wristband. `database_path` is the map: a new file makes a new map, an existing one
+continues it. On a finished map, add `mode:=localisation` to navigate on it without changing it. The places are saved
+next to the map (`lab.db` → `lab_places.yaml`).
+
+To run only the navigation part (no handle or wristband), with the same arguments:
+
+```bash
+ros2 launch /workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_robot.launch.py \
+  database_path:=/workspace/ros/src/bringup/maps/lab.db
+```
+
+Useful arguments:
+
+| Argument | Default | What it's for |
+| --- | --- | --- |
+| `mode` | `mapping` | `localisation` to navigate on a finished map |
+| `pioneer_port`, `lidar_port` | `/dev/pioneer`, `/dev/unilidar` | swap them (`pioneer_port:=/dev/unilidar lidar_port:=/dev/pioneer`) if the base or lidar don't connect because the container's USB numbers are swapped (see the [SLAM README](ros/src/autonomy/slam/README.md)) |
+| `filter` | `object` | `object` keeps moving people out of the map. The Nav2 costmaps still see them |
+| `enable_motors` | `true` | `false` to leave the motors off |
+| `rviz` | `false` | RTAB-Map's RViz on the Jetson. Heavy, so better run RViz on the laptop |
+
+Only one of these at a time: two launches start two base drivers on the same serial port, and neither works.
 
 ## [Simulation](ros/src/simulation/README.md)
 

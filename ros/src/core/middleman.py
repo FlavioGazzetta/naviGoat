@@ -11,7 +11,8 @@ Modes (the middleman only handles going somewhere, following, and stopping):
     "help"                           -> HELP
 
 Going to a location, object or GPS destination ends by itself: the code that drives it calls finish() on arrival.
-Following and manual mode have no goal, so they only end when the user says stop or exits the mode.
+Following and manual mode have no arrival goal. Both end on user stop; following
+also ends on correlated target-loss or input-failure feedback.
 
 "Remember this place as X" saves where the robot is now: the node publishes X on /navigation/save_place (navigation's
 places_node stores the position). places_node then sends all saved names back on /navigation/places, and
@@ -44,7 +45,8 @@ import sys
 import threading
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
@@ -72,6 +74,7 @@ class Decision:
     reply: str = ''  # what Pete says out loud
     forward: str = ''  # the full text for perception (what the camera sees); mode is None
     save_place: str = ''  # "remember this place as the study": the name for navigation to save the robot's position under; mode is None
+    request_id: str = field(default='', compare=False)  # correlate commands and following feedback
 
 
 WAKE_WORDS = ('hey pete', 'ok pete', 'pete')
@@ -132,6 +135,10 @@ QWEN_SCHEMA = {'type': 'object', 'properties': {'mode': {'enum': list(QWEN_MODES
 # The language model links what was said to the closest stored place or object. Below this confidence the
 # answer is "not a known location/object": it need not be the exact word, but it has to be something similar.
 CONFIDENCE_THRESHOLD = 0.7
+# Claude says "" for anything that is not in the lists, and is modest about a need that several places meet: measured
+# on the Jetson, "I'm hungry" -> pret at 0.5 to 0.7, "I need to study" at 0.6, "I'm thirsty" at 0.5. At 0.7 those were
+# refused ("Say that again."). The local model keeps 0.7: it is sure of itself even when it is wrong.
+CLOUD_CONFIDENCE_THRESHOLD = 0.5
 # How close a mis-heard word must be to a stored name to count as it ("bathrom" -> bathroom). difflib ratio.
 SPELLING_CUTOFF = 0.85
 QWEN_PROMPT = """You help Pete, a guide robot at Imperial College London, work out where a person who cannot see wants to go.
@@ -140,7 +147,7 @@ Places: {locations}
 Objects: {objects}
 Examples: "I'm hungry" -> pret. "I have to study" -> abdus salam library. "I want to work out" -> ethos sports centre. "I need to pray" -> prayer room. "I need to print something" -> computer room.
 Answer with a name exactly as written in the lists, without the brackets. If what they ask for is not in the lists, answer "". A particular named place or person that is not listed (for example someone's office) is not a match: answer "".
-confidence is 0 to 1: how sure you are. Use a low number if you are guessing."""
+confidence is 0 to 1: how sure you are that the place or object you chose meets the need. When several listed places would meet it equally well (several places sell food), choose one and stay sure: that is not guessing. Use a low number only if you doubt that anything in the lists is what they want."""
 
 
 def normalise(text):
@@ -291,6 +298,8 @@ def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN
         try:
             if (answer := llm.ask_cloud(prompt, text, schema=schema, max_tokens=512)) is not None:
                 result = json.loads(answer)
+                if minimum == CONFIDENCE_THRESHOLD:  # a need; an unknown name keeps its stricter minimum
+                    minimum = CLOUD_CONFIDENCE_THRESHOLD
             elif minimum > CONFIDENCE_THRESHOLD:
                 # An unknown name ("walk me to the bottom"): the local model claims to be sure of a wrong place every time
                 # ("iphone" -> computer room, "dean office" -> office), so offline the user hears "I don't know where".
@@ -466,12 +475,47 @@ class Middleman:
                 return decision  # stay in the current mode: speak the reply, or send the text to perception
             if decision.stop:
                 decision.reply = LEAVING_REPLIES.get(self.mode, decision.reply)
+            decision.request_id = uuid.uuid4().hex
             self.mode, self.current = decision.mode, decision
+            return decision
+
+    def following_status(self, payload):
+        """End only the FOLLOW request named by terminal status feedback.
+
+        Ignore progress, duplicates, standalone statuses and older requests.
+        Return an idle Decision for the ROS wrapper to announce and speak.
+        """
+        replies = {
+            'target_lost': 'I lost the person. Following stopped.',
+            'input_stale': 'Person tracking stopped updating. Following stopped.',
+            'input_fault': 'There is a problem with person tracking. Following stopped.',
+            'unsupported_target': 'Following a named contact is not available yet.',
+            'command_invalid': 'The following command was invalid. Following stopped.',
+            'disabled': 'Stopped following.',
+            'transform_unavailable': 'The navigation position is unavailable. Following stopped.',
+            'navigation_unavailable': 'Navigation is not available. Following stopped.',
+            'navigation_failed': 'Navigation failed. Following stopped.',
+            'navigation_cancel_failed': "I couldn't confirm navigation stopped. Please stop the robot.",
+        }
+        if not isinstance(payload, dict):
+            return None
+        event = payload.get('event')
+        request_id = payload.get('request_id')
+        if (payload.get('state') != 'IDLE' or not isinstance(event, str)
+                or event not in replies or not isinstance(request_id, str) or not request_id):
+            return None
+        with self._lock:
+            if (self.mode is not Mode.FOLLOW or self.current is None
+                    or request_id != self.current.request_id):
+                return None
+            self._epoch += 1  # invalidate an earlier slow interpretation
+            decision = Decision(Mode.IDLE, reply=replies[event], request_id=uuid.uuid4().hex)
+            self.mode, self.current = Mode.IDLE, decision
             return decision
 
     def finish(self):
         """The active mode reached its goal. LOCATION, OBJECT and GPS have a goal, so whoever drives them calls this
-        on arrival. FOLLOW and MANUAL have no goal, so they only end when the user says stop or exits the mode."""
+        on arrival. FOLLOW uses following_status() for failures; MANUAL ends on user stop."""
         with self._lock:
             self.mode, self.current = Mode.IDLE, None
 

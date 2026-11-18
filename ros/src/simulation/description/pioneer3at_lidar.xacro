@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://ros.org/wiki/xacro" name="pioneer3at">
   <xacro:include filename="../../bringup/description/pioneer3at_lidar.xacro"/>
+  <xacro:arg name="use_rgbd" default="true"/>
 
   <gazebo reference="unilidar_lidar">
     <sensor name="lidar" type="gpu_lidar">
@@ -32,32 +33,34 @@
     </sensor>
   </gazebo>
 
-  <gazebo reference="camera_link">
-    <sensor name="femto_bolt" type="rgbd_camera">
-      <always_on>true</always_on>
-      <update_rate>30</update_rate>
-      <topic>/femto_bolt</topic>
-      <gz_frame_id>camera_link</gz_frame_id>
-      <camera>
-        <horizontal_fov>1.3962634</horizontal_fov>
-        <image>
-          <width>1280</width>
-          <height>720</height>
-        </image>
-        <clip>
-          <near>0.05</near>
-          <far>100</far>
-        </clip>
-        <depth_camera>
+  <xacro:if value="$(arg use_rgbd)">
+    <gazebo reference="camera_link">
+      <sensor name="femto_bolt" type="rgbd_camera">
+        <always_on>true</always_on>
+        <update_rate>8</update_rate>
+        <topic>/femto_bolt</topic>
+        <gz_frame_id>camera_link</gz_frame_id>
+        <camera>
+          <horizontal_fov>1.3962634</horizontal_fov>
+          <image>
+            <width>1280</width>
+            <height>720</height>
+          </image>
           <clip>
-            <near>0.5</near>
-            <far>3.86</far>
+            <near>0.05</near>
+            <far>100</far>
           </clip>
-        </depth_camera>
-        <optical_frame_id>camera_color_optical_frame</optical_frame_id>
-      </camera>
-    </sensor>
-  </gazebo>
+          <depth_camera>
+            <clip>
+              <near>0.5</near>
+              <far>3.86</far>
+            </clip>
+          </depth_camera>
+          <optical_frame_id>camera_color_optical_frame</optical_frame_id>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:if>
 
   <gazebo>
     <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">

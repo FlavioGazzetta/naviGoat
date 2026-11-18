@@ -2,9 +2,10 @@ import os
 
 from launch import LaunchDescription
 from ament_index_python.packages import get_package_share_directory
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -22,7 +23,8 @@ def launch_slam(context):
             'database_path': database_path,
             'config_file': os.path.join(slam_dir, 'config', 'rtabmap_sim.yaml'),
             'use_sim_time': 'true',
-            'use_rgbd': 'true',
+            'use_rgbd': LaunchConfiguration('use_rgbd'),
+            'scan_cloud_topic': PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter'), "' == 'object' else '/unilidar/cloud/deskewed' if '", LaunchConfiguration('filter'), "' == 'deskew' else '/unilidar/cloud'"]),
         }.items(),
     )]
 
@@ -42,10 +44,33 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('mode', default_value='mapping', choices=['mapping', 'localisation']),
         DeclareLaunchArgument("world", default_value="indoor.sdf", description="Lets us choose which world we wanna be in"),
+        DeclareLaunchArgument('use_rgbd', default_value='true'),
+        DeclareLaunchArgument('filter', default_value='none', choices=['object', 'deskew', 'none']),
         
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'gazebo.launch.py')),
-            launch_arguments={'world': LaunchConfiguration('world')}.items(),
+            launch_arguments={'world': LaunchConfiguration('world'), 'use_rgbd': LaunchConfiguration('use_rgbd')}.items(),
+        ),
+        Node(
+            package='rtabmap_util',
+            executable='lidar_deskewing',
+            name='lidar_deskewing',
+            parameters=[{'fixed_frame_id': 'pioneer3at/odom', 'use_sim_time': True}],
+            remappings=[('input_cloud', '/unilidar/cloud')],
+            condition=IfCondition(PythonExpression(["'", LaunchConfiguration('filter'), "' != 'none'"])),
+            output='screen',
+        ),
+        ExecuteProcess(
+            cmd=[
+                'dynamic-object-removal-realtime',
+                '--pointcloud-topic', '/unilidar/cloud/deskewed',
+                '--output-topic', '/unilidar/cloud_static',
+                '--algorithm', 'range',
+                '--fixed-frame', 'pioneer3at/odom',
+                '--range-window', '3',
+            ],
+            condition=IfCondition(PythonExpression(["'", LaunchConfiguration('filter'), "' == 'object'"])),
+            output='screen',
         ),
         OpaqueFunction(function=launch_slam),
 
