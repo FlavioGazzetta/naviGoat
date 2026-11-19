@@ -69,7 +69,7 @@ def generate_launch_description():
         ),
         ExecuteProcess(
             cmd=[
-                'dynamic-object-removal-realtime',
+                'python3', os.path.join(simulation_dir, '..', 'autonomy', 'slam', 'dynamic_object_filter.py'),
                 '--pointcloud-topic', '/unilidar/cloud/deskewed',
                 '--output-topic', '/unilidar/cloud_static',
                 '--algorithm', 'range',
