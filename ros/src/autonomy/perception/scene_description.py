@@ -88,7 +88,7 @@ def collage(frame, parts):
 
 # A description is worth waiting for: Claude's is much better than the local model's, and a picture over a slow
 # connection can take longer than the 4 s that commands get (llm.CLOUD_TIMEOUT).
-CLOUD_TIMEOUT = 10.0
+CLOUD_TIMEOUT = 8.0
 
 # The two lengths: the short one by default, the long one when the user asks for the scene "in detail".
 # (how long, how much detail, the most sentences kept, the local model's token limit)

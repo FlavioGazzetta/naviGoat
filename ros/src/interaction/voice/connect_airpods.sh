@@ -14,6 +14,8 @@ SRC=bluez_input.$ID.0
 CARD=bluez_card.$ID
 
 pkill -f 'paplay.*zero' 2>/dev/null
+# an earlier run's link to the laptop's speakers (SHOW_SPEAKER, below)
+for module in $(pactl list short modules | awk '/module-tunnel-sink.*show_speaker/ {print $1}'); do pactl unload-module "$module"; done
 [ "$1" = "--stop" ] && exit 0
 
 # 1. Connect. They go to sleep in the case or when idle, so try a few times.
@@ -47,6 +49,18 @@ pactl set-default-sink $SINK
 pactl set-default-source $SRC
 pactl set-sink-volume $SINK 60%
 pactl set-source-volume $SRC 100%
+
+# For a demo (start_pete.sh show:=true): Pete speaks through a laptop's speakers so the room hears it, and still listens
+# through the headset. SHOW_SPEAKER is the laptop's address; it must be running show_speaker.sh.
+if [ -n "$SHOW_SPEAKER" ]; then
+  if timeout 2 bash -c "</dev/tcp/$SHOW_SPEAKER/4713" 2>/dev/null; then
+    pactl load-module module-tunnel-sink server=tcp:$SHOW_SPEAKER sink_name=show_speaker >/dev/null
+    for i in $(seq 1 10); do pactl list short sinks | grep -q show_speaker && break; sleep 0.5; done
+    pactl set-default-sink show_speaker && echo "Show: Pete speaks through the computer at $SHOW_SPEAKER, and listens through the headset."
+  else
+    echo "Show: the computer at $SHOW_SPEAKER is not accepting sound. Run show_speaker.sh on it. Pete speaks through the headset."
+  fi
+fi
 
 # 4. The microphone only carries audio while something plays to the AirPods, so play silence. It keeps running after
 #    this script ends; "--stop" ends it.

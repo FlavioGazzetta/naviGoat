@@ -51,6 +51,7 @@ def generate_launch_description():
         DeclareLaunchArgument('listen', default_value='true'),
         DeclareLaunchArgument('device', default_value='pulse'),
         DeclareLaunchArgument('silence', default_value='1.0'),  # seconds of quiet that end a spoken phrase
+        DeclareLaunchArgument('show', default_value='false'),  # read by start_pete.sh, not here: Pete speaks through the laptop's speakers
         DeclareLaunchArgument('people', default_value='false'),  # true also tracks people, on /social_perception/tracks
         DeclareLaunchArgument('people_port', default_value='8766'),  # the dashboard's; 8765 is Whisper's
         DeclareLaunchArgument('people_max_age', default_value='1.0'),  # seconds to retain an unobserved track; following uses 2.0
