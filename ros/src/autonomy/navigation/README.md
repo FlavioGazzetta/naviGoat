@@ -1,7 +1,8 @@
 # Navigation: how to run it
 
 Copy-paste instructions for the real robot. What the topics are and how it works: [TOPICS.md](TOPICS.md). The old, long
-README (Gazebo tests and details): [README_archive.md](README_archive.md).
+README (Gazebo tests and details): [README_archive.md](README_archive.md). Gazebo test scenarios (no one, people
+standing, people walking): [navigation_scenarios.md](navigation_scenarios.md).
 
 ## 1. Connect to the Jetson
 

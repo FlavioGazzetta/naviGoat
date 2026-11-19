@@ -1,4 +1,4 @@
-# Scenario 1 of navigation_scenarios.md: the indoor world with no one in it (the baseline run).
+# Scenario 1 of autonomy/navigation/navigation_scenarios.md: the indoor world with no one in it (the baseline run).
 # Read by people_node.py through navigation_sim.launch.py fake_people:=<this file>.
 #
 #   ros2 launch $SIM fake_people:=/workspace/ros/src/simulation/config/people_none.yaml

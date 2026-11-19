@@ -1,10 +1,10 @@
-# Scenario 2 of navigation_scenarios.md: people standing still in the indoor world.
+# Scenario 2 of autonomy/navigation/navigation_scenarios.md: people standing still in the indoor world.
 # Read by people_node.py through navigation_sim.launch.py fake_people:=<this file>.
 #
 #   ros2 launch $SIM fake_people:=/workspace/ros/src/simulation/config/people_static.yaml
 #
 # Map coordinates in metres. indoor.sdf is a 10 x 10 m room (walls at +-5), with a 1 x 1 m box at (2, 1) and the robot
-# starting at (0, 0) facing +x, so the map frame is the world frame. The test route (navigation_scenarios.md) is:
+# starting at (0, 0) facing +x, so the map frame is the world frame. The test route (autonomy/navigation/navigation_scenarios.md) is:
 #   start (0, 0) -> desk (3.5, -3) -> door (-3.5, 3) -> desk -> chair (object at -3.5, -3.5) -> start
 # The people are only in RViz (purple cylinders) and in Nav2's costmaps (social layer). Gazebo and the lidar don't see
 # them. Every person is at least 2 m from the goals, so the robot can still reach them.

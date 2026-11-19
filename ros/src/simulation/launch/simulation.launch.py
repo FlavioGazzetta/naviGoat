@@ -46,12 +46,17 @@ def generate_launch_description():
         DeclareLaunchArgument("world", default_value="indoor.sdf", description="Lets us choose which world we wanna be in"),
         DeclareLaunchArgument('use_rgbd', default_value='true'),
         DeclareLaunchArgument('filter', default_value='none', choices=['object', 'deskew', 'none']),
+        DeclareLaunchArgument('headless', default_value='false', choices=['true', 'false'],
+                              description='true on a machine without a screen (Jetson over SSH): Gazebo server only'),
+        DeclareLaunchArgument('rviz', default_value='true', choices=['true', 'false'],
+                              description='false to run RViz on another computer (the laptop) instead'),
         DeclareLaunchArgument('rviz_config', default_value=os.path.join(simulation_dir, 'config', 'mapping.rviz'),
                               description='RViz config, e.g. autonomy/navigation/config/robot.rviz (the real robot one)'),
         
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'gazebo.launch.py')),
-            launch_arguments={'world': LaunchConfiguration('world'), 'use_rgbd': LaunchConfiguration('use_rgbd')}.items(),
+            launch_arguments={'world': LaunchConfiguration('world'), 'use_rgbd': LaunchConfiguration('use_rgbd'),
+                              'headless': LaunchConfiguration('headless')}.items(),
         ),
         Node(
             package='rtabmap_util',
@@ -92,6 +97,7 @@ def generate_launch_description():
             executable='rviz2',
             arguments=['-d', LaunchConfiguration('rviz_config')],
             parameters=[{'use_sim_time': True}],
+            condition=IfCondition(LaunchConfiguration('rviz')),
             output='screen',
         ),
     ])

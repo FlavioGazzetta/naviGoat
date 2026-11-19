@@ -61,6 +61,11 @@ def generate_launch_description():
         DeclareLaunchArgument('mode', default_value='localisation', choices=['mapping', 'localisation']),
         DeclareLaunchArgument('world', default_value='indoor.sdf'),
         # the real robot's RViz (autonomy/navigation/config/robot.rviz) by default, so the sim looks like the robot
+        # on the Jetson over SSH (no screen): headless:=true rviz:=false, and RViz on the laptop (navigation_scenarios.md)
+        DeclareLaunchArgument('headless', default_value='false', choices=['true', 'false'],
+                              description='true on a machine without a screen: Gazebo server only, no window'),
+        DeclareLaunchArgument('rviz', default_value='true', choices=['true', 'false'],
+                              description='false to run RViz on another computer instead'),
         DeclareLaunchArgument('rviz_config', default_value=os.path.join(SRC_DIR, 'autonomy', 'navigation', 'config', 'robot.rviz'),
                               description='RViz config file'),
         DeclareLaunchArgument('fake_people', default_value='none', description='YAML file of made-up people, for testing'),
@@ -82,7 +87,8 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(SRC_DIR, 'simulation', 'launch', 'simulation.launch.py')),
             launch_arguments={'mode': LaunchConfiguration('mode'), 'world': LaunchConfiguration('world'),
-                              'rviz_config': LaunchConfiguration('rviz_config')}.items(),
+                              'rviz_config': LaunchConfiguration('rviz_config'),
+                              'headless': LaunchConfiguration('headless'), 'rviz': LaunchConfiguration('rviz')}.items(),
         ),
         # and our nodes
         OpaqueFunction(function=launch_navigation),

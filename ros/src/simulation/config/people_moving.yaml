@@ -1,4 +1,4 @@
-# Scenario 3 of navigation_scenarios.md: people walking in the indoor world.
+# Scenario 3 of autonomy/navigation/navigation_scenarios.md: people walking in the indoor world.
 # Read by people_node.py through navigation_sim.launch.py fake_people:=<this file>.
 #
 #   ros2 launch $SIM fake_people:=/workspace/ros/src/simulation/config/people_moving.yaml

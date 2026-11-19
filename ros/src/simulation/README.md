@@ -54,4 +54,4 @@ ros2 topic echo /localization_pose --once --field pose.pose.position
 ## Navigation test scenarios
 
 No one, people standing and people walking, in the indoor world with the real robot's RViz, including saving a place,
-going to a place and going to an object: [navigation_scenarios.md](navigation_scenarios.md).
+going to a place and going to an object: [autonomy/navigation/navigation_scenarios.md](../autonomy/navigation/navigation_scenarios.md).

@@ -1,19 +1,19 @@
 # Navigation in Gazebo: test scenarios
 
 Three runs of the full navigation stack (Gazebo, RTAB-Map, Nav2, our navigation nodes) in the indoor world
-(`worlds/indoor.sdf`), with the same RViz as the real robot (`autonomy/navigation/config/robot.rviz`):
+(`ros/src/simulation/worlds/indoor.sdf`), with the same RViz as the real robot ([config/robot.rviz](config/robot.rviz)):
 
 | # | Scenario | People file |
 | --- | --- | --- |
-| 1 | No one | [config/people_none.yaml](config/people_none.yaml) |
-| 2 | People standing still | [config/people_static.yaml](config/people_static.yaml) |
-| 3 | People walking | [config/people_moving.yaml](config/people_moving.yaml) |
+| 1 | No one | [people_none.yaml](../../simulation/config/people_none.yaml) |
+| 2 | People standing still | [people_static.yaml](../../simulation/config/people_static.yaml) |
+| 3 | People walking | [people_moving.yaml](../../simulation/config/people_moving.yaml) |
 
 Each run does the same route, so the recordings can be compared. It covers **saving a place**, **going to a saved
 place**, **going to a point** and **going to an object**:
 
 ```
-start (0, 0) ──goto_point──▶ desk (3.5, -3) ──goto_point──▶ door (-3.5, 3) ──goto desk──▶ desk ──object──▶ chair (-3.5, -3.5) ──goto start──▶ start
+start (0, 0) ──goto_point──> desk (3.5, -3) ──goto_point──> door (-3.5, 3) ──goto desk──> desk ──object──> chair (-3.5, -3.5) ──goto start──> start
 ```
 
 The room is 10 × 10 m (walls at ±5 m), with a 1 × 1 m box at (2, 1). The robot spawns at (0, 0) facing +x, so map
@@ -24,25 +24,56 @@ coordinates are world coordinates.
 
 ## 1. Setup (once)
 
-💻 On the laptop, from the repository root:
-```bash
-xhost +si:localuser:root
-docker run --rm -it --name navigoat-dev --network=host -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
-```
-More terminals in the same container: `docker exec -it navigoat-dev bash`.
+Run the simulation **on the laptop**: Gazebo needs a screen, and everything stays on one machine. All the commands
+below run in laptop terminals.
 
-🐳 Build once:
+**First, keep the Jetson out of it.** Stop any launch running on the Jetson (Ctrl+C), and close an RViz started with
+the real-robot settings: over the USB cable the laptop would otherwise see the Jetson's Nav2, `/tf` and `/clock` mixed
+with the simulation's.
+
+### On the laptop directly (ROS Jazzy and Gazebo installed)
+
+From the repository root, build once:
 ```bash
-cd /workspace
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-up-to p2os_urdf navigation_nodes social_layer middleman
 ```
 
-🐳 **In every container terminal** first:
+**In every terminal** first (from the repository root):
+```bash
+source /opt/ros/jazzy/setup.bash && source install/setup.bash
+unset FASTRTPS_DEFAULT_PROFILES_FILE ROS_STATIC_PEERS
+export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST     # ROS stays on the laptop, even with the Jetson plugged in
+SIM=$PWD/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_sim.launch.py
+PEOPLE=$PWD/ros/src/simulation/config
+```
+
+### Or in the container
+
+From the repository root:
+```bash
+xhost +si:localuser:root
+docker run --rm -it --name navigoat-dev --network=host -e DISPLAY -e ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST \
+  -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+```
+More terminals: `docker exec -it navigoat-dev bash`. Build once with the `colcon build` above (from `/workspace`), then
+in every container terminal:
 ```bash
 source /workspace/install/setup.bash
 SIM=/workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_sim.launch.py
 PEOPLE=/workspace/ros/src/simulation/config
 ```
+
+### Running it on the Jetson instead (not recommended)
+
+Over SSH the Jetson has no screen, so plain `gz sim` exits straight away and nothing runs (no `/clock`). Add
+`headless:=true rviz:=false` to the launch commands below (Gazebo's server only, rendering on the GPU), and on the
+laptop start RViz with the simulation's clock:
+```bash
+export FASTRTPS_DEFAULT_PROFILES_FILE=$PWD/ros/src/autonomy/navigation/config/fastdds_usb.xml
+rviz2 -d ros/src/autonomy/navigation/config/robot.rviz --ros-args -p use_sim_time:=true
+```
+Gazebo, RTAB-Map and Nav2 together are heavy for the Jetson, so expect it to run slower than real time.
 
 ### The map
 
@@ -53,11 +84,11 @@ ros2 launch $SIM mode:=mapping                                           # termi
 ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/model/pioneer3at/cmd_vel -p speed:=0.3 -p turn:=0.5   # terminal 2
 ```
 Drive around the whole room, come back near (0, 0), then Ctrl+C both and wait for RTAB-Map to save. Places saved on an
-older map don't match a new one: delete `maps/indoor_places.yaml` if you re-map.
+older map don't match a new one: delete `ros/src/simulation/maps/indoor_places.yaml` if you re-map.
 
 ## 2. Launch a scenario
 
-🐳 Terminal 1, **one** of these (one launch at a time):
+Terminal 1, **one** of these (one launch at a time):
 
 | Scenario | Command |
 | --- | --- |
@@ -71,12 +102,12 @@ older map don't match a new one: delete `maps/indoor_places.yaml` if you re-map.
 - The launch output prints `People ready: N standing and M walking fake people`. Check it says 0/0, 5/0 or 0/3.
 - Walkers start walking when the launch starts, so where they are on each leg depends on timing.
 
-🐳 Terminal 2, watch what navigation does (leave it open for the whole run):
+Terminal 2, watch what navigation does (leave it open for the whole run):
 ```bash
 ros2 topic echo /navigation/status --no-daemon --field data
 ```
 
-🐳 Terminal 3, check the robot is localised at the start (it should print about x 0, y 0):
+Terminal 3, check the robot is localised at the start (it should print about x 0, y 0):
 ```bash
 ros2 topic echo /localization_pose --once --no-daemon --field pose.pose.position
 ```
@@ -84,7 +115,7 @@ If it doesn't, or the robot in RViz isn't on the map, use RViz's **2D Pose Estim
 
 ### Clean slate before recording (optional)
 
-The places are kept in `maps/indoor_places.yaml` between runs, so the previous run's arrows are still in RViz. To
+The places are kept in `ros/src/simulation/maps/indoor_places.yaml` between runs, so the previous run's arrows are still in RViz. To
 start each recording without them:
 ```bash
 for p in start desk door; do ros2 topic pub --once /navigation/forget_place std_msgs/msg/String "{data: $p}"; done
@@ -92,7 +123,7 @@ for p in start desk door; do ros2 topic pub --once /navigation/forget_place std_
 
 ## 3. The route (the same commands in all three scenarios)
 
-🐳 Terminal 3. Send each step **only after terminal 2 shows `arrived:...`** for the previous one.
+Terminal 3. Send each step **only after terminal 2 shows `arrived:...`** for the previous one.
 
 **Step 1: save a place.** The robot is at the start. Save it:
 ```bash
@@ -181,20 +212,20 @@ Now it goes through the gap between the two people. `group_cost 220` turns it ba
 
 ## 5. Recording the data too (optional)
 
-Besides the screen recording, a bag of the run (🐳 terminal 4, start it before step 1, Ctrl+C after step 6):
+Besides the screen recording, a bag of the run (terminal 4, start it before step 1, Ctrl+C after step 6):
 ```bash
-mkdir -p /workspace/bags
-ros2 bag record -o /workspace/bags/sim_static_$(date +%H%M) /clock /tf /tf_static /odom /map /plan \
+mkdir -p bags
+ros2 bag record -o bags/sim_static_$(date +%H%M) /clock /tf /tf_static /odom /map /plan \
   /global_costmap/costmap /local_costmap/costmap /people /navigation/status /navigation/people_markers \
   /navigation/places_markers /handle/vibration /wristband/vibration /robot_description
 ```
 Change `sim_static` to `sim_none` / `sim_moving`. Replay it with `ros2 bag play <folder> --clock` and RViz with
-`rviz2 -d /workspace/ros/src/autonomy/navigation/config/robot.rviz --ros-args -p use_sim_time:=true`.
+`rviz2 -d ros/src/autonomy/navigation/config/robot.rviz --ros-args -p use_sim_time:=true`.
 
 ## 6. Between scenarios
 
 One Ctrl+C in terminal 1, wait 10–15 s until everything has stopped, then launch the next scenario. Gazebo restarts,
-so the robot is back at (0, 0). The saved places stay in `maps/indoor_places.yaml`, and saving the same name again
+so the robot is back at (0, 0). The saved places stay in `ros/src/simulation/maps/indoor_places.yaml`, and saving the same name again
 overwrites it.
 
 ## When something's wrong

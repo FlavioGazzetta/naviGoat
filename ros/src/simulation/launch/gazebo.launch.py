@@ -3,6 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import AppendEnvironmentVariable, DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import Command, PathJoinSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -23,10 +24,19 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('use_rgbd', default_value='true'),
+        # headless:=true for a machine without a screen (the Jetson over SSH): only Gazebo's server, no window, and the
+        # lidar and camera rendered with EGL on the GPU instead of through a display
+        DeclareLaunchArgument('headless', default_value='false', choices=['true', 'false']),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(p2os_share)),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(simulation_dir, 'models')),
         ExecuteProcess(
-            cmd=['gz', 'sim', '-r', world_path], 
+            cmd=['gz', 'sim', '-r', world_path],
+            condition=UnlessCondition(LaunchConfiguration('headless')),
+            output='screen'
+        ),
+        ExecuteProcess(
+            cmd=['gz', 'sim', '-r', '-s', '--headless-rendering', world_path],
+            condition=IfCondition(LaunchConfiguration('headless')),
             output='screen'
         ),
 
