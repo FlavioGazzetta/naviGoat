@@ -28,8 +28,8 @@ localizer:
     # "GPS, I'm at X" replaces this place and is kept in assumed_file for later runs.
     assumed_file: ~/.local/share/navigoat/gps_start.json
     assumed_name: the Electrical Engineering building
-    assumed_lat: 51.4991         # Imperial College, EEE building (Dalby Court side)
-    assumed_lon: -0.1753
+    assumed_lat: 51.4990213      # Imperial College, EEE building (its point in OpenStreetMap)
+    assumed_lon: -0.1763852
     assume_after: 10.0           # seconds without a position before assuming
 
 # The route planner. A start or a destination may be this far (m) from the nearest
@@ -44,6 +44,10 @@ route_planner:
 mission_manager:
   ros__parameters:
     pick_nearest: true
+    # A name is first searched for within this many metres of us, so "pret" finds the
+    # ones close by; the whole map area follows only if nothing is there. Our position,
+    # rounded to about 100 m, then goes to the search server. 0 = whole area only.
+    nearby_radius: 800.0
 
 # The online search. More results than its own 5, so that the nearest is among them.
 geocoder:

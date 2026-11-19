@@ -236,12 +236,18 @@ def resolve(target, text, locations, saved, hint=None, match='', confidence=0.0)
 
 
 # "the natural history museum in south kensington": the map search wants the name alone, and only covers that area anyway
-_AREA = re.compile(r"\s+(in|at|near|of)\s+(the\s+)?(south kensington|kensington|london|imperial college london|imperial college|imperial)$")
+_AREA = re.compile(r"\s+((in|at|near|of)\s+)?(the\s+)?(south kensington|kensington|london|imperial college london|imperial college|imperial)$")
+
+
+_NEAREST = re.compile(r"^(the\s+)?(nearest|closest|nearby|a|an|any|some)\s+")
 
 
 def strip_area(place):
-    """A place name without the area said after it: 'abdus salam library in imperial college' -> 'abdus salam library'."""
+    """A place name without the area said after it, or "nearest" before it: 'abdus salam library in imperial college' ->
+    'abdus salam library', 'nearest pret' -> 'pret'. The GPS layer picks the nearest of several anyway."""
     while (shorter := _AREA.sub('', place)) != place and shorter:
+        place = shorter
+    while (shorter := _NEAREST.sub('', place)) != place and shorter:
         place = shorter
     return place
 

@@ -18,13 +18,13 @@ Usage policy of the public server:
 https://operations.osmfoundation.org/policies/nominatim/
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import IntEnum
 import time
 from typing import Tuple
 
 from guide_core.geocoding import (
-    GeocodeConfig, GeocodeError, parse_results, search_params, searchable_query)
+    BBox, GeocodeConfig, GeocodeError, parse_results, search_params, searchable_query)
 from guide_core.rate_limit import RateLimiter
 
 
@@ -111,13 +111,43 @@ class Geocoder:
         return LookupResult(status, query, hit.places, True, not hit.fresh,
                             f'From cache (saved {_age_text(hit.age)} ago): {found}{note}')
 
-    def lookup(self, query):
-        """Find places for one destination name (see the module docstring)."""
+    def lookup(self, query, near=None, radius=0.0):
+        """Find places for one destination name (see the module docstring).
+
+        near: (lat, lon) of the robot, with radius > 0 (metres): the square that
+        far around it is searched first, so that "pret" finds the ones close by
+        and not just the first few of the whole area. The whole graph area is
+        searched when nothing is found there. The position is rounded to about
+        100 m before it is used: that is all the search server learns of it.
+        """
         text = searchable_query(query, self.config)
         if not text:
             return LookupResult(Status.ERROR, ' '.join(str(query).split()),
                                 message='Query too short to search for')
-        hit = self.cache.get(text, self._wall_clock(), self._area)
+        nearby = self._nearby_box(near, radius)
+        if nearby is not None:
+            lat, lon, box = nearby
+            key = f'{text} near {lat:.3f} {lon:.3f} within {radius:.0f}'
+            result = self._lookup(text, key, box)
+            if result.status is Status.OK:
+                return replace(result, message=f'Within {radius:.0f} m: {result.message}')
+        return self._lookup(text, text, self.bbox)
+
+    def _nearby_box(self, near, radius):
+        """Return (lat, lon, BBox) for a search around near, or None for the whole area."""
+        if near is None or not radius > 0.0:
+            return None
+        lat, lon = round(float(near[0]), 3), round(float(near[1]), 3)
+        if not self.bbox.contains(lat, lon):
+            return None
+        box = BBox.around(lat, lon, radius)
+        area = self.bbox
+        return lat, lon, BBox(max(box.min_lat, area.min_lat), max(box.min_lon, area.min_lon),
+                              min(box.max_lat, area.max_lat), min(box.max_lon, area.max_lon))
+
+    def _lookup(self, text, key, bbox):
+        """Look text up in bbox: the cache (under key) first, then one request."""
+        hit = self.cache.get(key, self._wall_clock(), self._area)
         if hit is not None and hit.fresh:
             return self._from_cache(text, hit, '')
 
@@ -136,7 +166,7 @@ class Geocoder:
         if decision.wait > 0.0:
             self._sleep(decision.wait)
 
-        params = search_params(text, self.bbox, self.config)
+        params = search_params(text, bbox, self.config)
         started = self._monotonic()
         self.limiter.record_request(started)
         try:
@@ -153,7 +183,7 @@ class Geocoder:
         elapsed_ms = (self._monotonic() - started) * 1000.0
         note = ''
         try:
-            if not self.cache.put(text, parsed.places, self._wall_clock()):
+            if not self.cache.put(key, parsed.places, self._wall_clock()):
                 note = '; cache is read-only, not saved'
         except OSError as e:
             note = f'; could not save the cache: {e}'

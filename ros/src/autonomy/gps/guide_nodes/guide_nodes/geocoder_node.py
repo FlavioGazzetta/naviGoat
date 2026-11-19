@@ -197,7 +197,8 @@ class GeocoderNode(Node):
 
     def _on_geocode(self, request, response):
         """Look the query up; every outcome is a status, never an exception."""
-        result = self._geocoder.lookup(request.query)
+        near = (request.latitude, request.longitude) if request.radius > 0.0 else None
+        result = self._geocoder.lookup(request.query, near, request.radius)
         response.status = int(result.status)
         response.from_cache = result.from_cache
         response.stale = result.stale

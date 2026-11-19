@@ -127,6 +127,9 @@ class MissionManagerNode(Node):
         self.declare_parameter('use_geocoder', True)
         # True: several places with the name ("pret") -> go to the nearest and say so.
         self.declare_parameter('pick_nearest', False)
+        # Metres around the robot searched first for a destination's name (0 = the
+        # whole graph area straight away). The whole area follows if nothing is there.
+        self.declare_parameter('nearby_radius', 0.0)
         self.declare_parameter('geocoder_timeout', 8.0)  # s; then "couldn't search"
 
         self._origin = (self.get_parameter('origin_lat').value,
@@ -469,7 +472,7 @@ class MissionManagerNode(Node):
         self._run(self._mission.on_plan_result(command.plan_id, True, response.message,
                                                summary))
 
-    def _call_geocoder(self, query, on_done):
+    def _call_geocoder(self, query, on_done, nearby=True):
         """Call guide/geocode for query; on_done(response, '') or on_done(None, why).
 
         on_done is called exactly once: with the answer, or with None if the
@@ -500,7 +503,12 @@ class MissionManagerNode(Node):
         timer = self.create_timer(
             self._geocoder_timeout,
             lambda: finish(None, f'no answer from the geocoder in {self._geocoder_timeout:.0f} s'))
-        self._geocode_client.call_async(Geocode.Request(query=query)).add_done_callback(on_answer)
+        request = Geocode.Request(query=query)
+        radius = float(self.get_parameter('nearby_radius').value)
+        robot = self._robot_latlon() if nearby and radius > 0.0 else None
+        if robot is not None:
+            request.latitude, request.longitude, request.radius = robot[0], robot[1], radius
+        self._geocode_client.call_async(request).add_done_callback(on_answer)
 
     @staticmethod
     def _destinations_from(response):
@@ -608,7 +616,8 @@ class MissionManagerNode(Node):
                 and resolution.query):
             answer = Future()   # completed by _call_geocoder's on_done
             self._call_geocoder(resolution.query,
-                                lambda r, why: answer.set_result((r, why)))
+                                lambda r, why: answer.set_result((r, why)),
+                                nearby=False)   # a place by name: not only near the robot
             geocoded, why = await answer
             if geocoded is None:
                 self.get_logger().warning(f"Resolve '{request.query}': {why}")
