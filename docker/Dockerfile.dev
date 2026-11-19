@@ -57,19 +57,6 @@ RUN if [ "$PETE" = "true" ]; then \
         (ollama serve > /dev/null 2>&1 &) && sleep 5 && ollama create lfm2.5-vl:1.6b -f Modelfile; \
     fi && rm -rf /tmp/lfm
 
-ARG GPS=false
-# The GPS navigation layer (ros/src/autonomy/gps): walking routes on a cached OpenStreetMap graph, fed to Nav2 as near goals.
-# Its route planner loads the graph with osmnx. numpy, pandas, shapely, pyproj, networkx and requests come from Ubuntu, so
-# numpy stays below 2 (the ROS packages are built against numpy 1); geopandas and osmnx come from pip with --no-deps, at the
-# versions it was tested with, so pip cannot replace any of them. nav2_msgs: our messages and the goal sender use Nav2's
-# NavigateToPose action. A layer of its own, after the others, so adding it does not rebuild them.
-RUN if [ "$GPS" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends ros-jazzy-nav2-msgs python3-numpy python3-pandas \
-            python3-shapely python3-pyproj python3-networkx python3-requests python3-dateutil python3-packaging python3-yaml && \
-        rm -rf /var/lib/apt/lists/* && \
-        python3 -m pip install --no-cache-dir --break-system-packages --no-deps geopandas==1.1.4 osmnx==2.1.1; \
-    fi
-
 RUN printf '\nsource /opt/ros/jazzy/setup.bash\nif [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; fi\n' >> /etc/bash.bashrc
 
 RUN printf '\nif command -v ollama > /dev/null && ! pgrep -x ollama > /dev/null; then (ollama serve > /tmp/ollama.log 2>&1 &); fi\n' >> /etc/bash.bashrc
@@ -94,3 +81,18 @@ RUN if [ "$SOCIAL" = "true" ]; then \
             "numpy<2" scipy ultralytics git+https://github.com/ultralytics/CLIP.git && \
         /bin/bash -c 'source /opt/ros/jazzy/setup.bash && /opt/people_env/bin/python -c "import torch, torchvision, cv_bridge, message_filters, rclpy; print(torch.__version__, torch.version.cuda)"'; \
         fi
+
+ARG GPS=false
+# Last in the file on purpose: turning GPS on then adds only this layer and reuses every layer above, the people
+# tracker's included.
+# The GPS navigation layer (ros/src/autonomy/gps): walking routes on a cached OpenStreetMap graph, fed to Nav2 as near goals.
+# Its route planner loads the graph with osmnx. numpy, pandas, shapely, pyproj, networkx and requests come from Ubuntu, so
+# numpy stays below 2 (the ROS packages are built against numpy 1); geopandas and osmnx come from pip with --no-deps, at the
+# versions it was tested with, so pip cannot replace any of them. nav2_msgs: our messages and the goal sender use Nav2's
+# NavigateToPose action. A layer of its own, after the others, so adding it does not rebuild them.
+RUN if [ "$GPS" = "true" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends ros-jazzy-nav2-msgs python3-numpy python3-pandas \
+            python3-shapely python3-pyproj python3-networkx python3-requests python3-dateutil python3-packaging python3-yaml && \
+        rm -rf /var/lib/apt/lists/* && \
+        python3 -m pip install --no-cache-dir --break-system-packages --no-deps geopandas==1.1.4 osmnx==2.1.1; \
+    fi
