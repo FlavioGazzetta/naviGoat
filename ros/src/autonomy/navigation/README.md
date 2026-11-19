@@ -11,7 +11,6 @@ README (Gazebo tests and details): [README_archive.md](README_archive.md).
 
 Cable from the laptop to the Jetson's **USB-C** port. The Jetson is then always `192.168.55.1`.
 
-💻
 ```bash
 ssh navigoat@192.168.55.1
 ```
@@ -20,7 +19,6 @@ ssh navigoat@192.168.55.1
 
 Laptop and Jetson on the same network. Find the Jetson's address on the Jetson (🤖 `hostname -I`), e.g. `172.20.10.2`.
 
-💻
 ```bash
 ssh -o ServerAliveInterval=5 -o ServerAliveCountMax=3 navigoat@172.20.10.2
 ```
@@ -30,7 +28,7 @@ usually block devices from reaching each other.
 
 ## 2. Start the container
 
-🤖 From the repository folder (it gets mounted as `/workspace`, so it **must** be run from `~/naviGoat`):
+From the repository folder (it gets mounted as `/workspace`, so it **must** be run from `~/naviGoat`):
 ```bash
 cd ~/naviGoat
 docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus all --privileged -v /dev:/dev \
@@ -38,12 +36,12 @@ docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus a
 ```
 - More terminals in the same container: 🤖 `docker exec -it navigoat-dev bash`
 - The base and lidar ports are found automatically. For social nav the image needs Pete's extras:
-  🤖 `docker build -f docker/Dockerfile.dev --build-arg PETE=true -t navigoat:dev .`
+`docker build -f docker/Dockerfile.dev --build-arg PETE=true -t navigoat:dev .`
 - First time only, build: 🐳 `cd /workspace && colcon build --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install`
 
 ## 3. Launch
 
-🐳 In every container terminal first:
+In every container terminal first:
 ```bash
 source /workspace/install/setup.bash
 NAV=/workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_robot.launch.py
@@ -52,7 +50,7 @@ MAP=/workspace/ros/src/bringup/maps/lab.db      # the map file: a new name = a n
 
 Then **one** of these (only one launch at a time):
 
-| What | 🐳 Command |
+| What | Command |
 | --- | --- |
 | **Map + drive with Nav2 goals** | `ros2 launch $NAV database_path:=$MAP` |
 | **Map + drive with the keyboard** (no Nav2) | `ros2 launch $NAV database_path:=$MAP teleop:=true` |
@@ -74,7 +72,7 @@ heavy), `places_file:=...`, `pioneer_port:=...` / `lidar_port:=...` (only if the
 
 ## 4. RViz on the laptop
 
-💻 From the repository root on the laptop (built once with `colcon build`, for the robot's 3D model):
+From the repository root on the laptop (built once with `colcon build`, for the robot's 3D model):
 ```bash
 source /opt/ros/jazzy/setup.bash && source install/setup.bash
 ```
@@ -99,7 +97,7 @@ rviz2 -d ros/src/autonomy/navigation/config/robot.rviz
 
 ## 5. Places
 
-🐳 Drive the robot to the spot first: a place is saved at the robot's current position. Best in `localisation` mode
+Drive the robot to the spot first: a place is saved at the robot's current position. Best in `localisation` mode
 (in mapping mode the map can still shift).
 
 ```bash
@@ -116,7 +114,7 @@ By voice: "Pete, remember this place as the kitchen", "Pete, take me to the kitc
 
 ## 6. Check that things work
 
-🐳
+
 ```bash
 ros2 topic hz /odom                                     # base: ~10 Hz
 ros2 topic hz /unilidar/cloud                           # lidar: ~10 Hz
@@ -129,12 +127,12 @@ after a restart, run `ros2 daemon stop` and try again.
 ## 7. Stop
 
 - Normally: **one** Ctrl+C in the launch terminal, then wait 10–15 s (RTAB-Map saves the map). Not Ctrl+Z (that only pauses).
-- If a terminal is lost, 🤖:
+- If a terminal is lost, :
   ```bash
   docker exec navigoat-dev pkill -INT -f "ros2 launch"     # stop cleanly, map gets saved
   docker exec navigoat-dev pgrep -af "p2os_driver|rtabmap|controller_server"   # should print nothing
   ```
-- Everything at once: 🤖 `docker stop navigoat-dev` (then start the container again, step 2).
+- Everything at once: `docker stop navigoat-dev` (then start the container again, step 2).
 
 ## When something's wrong
 
