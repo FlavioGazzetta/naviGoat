@@ -46,6 +46,8 @@ def generate_launch_description():
         DeclareLaunchArgument("world", default_value="indoor.sdf", description="Lets us choose which world we wanna be in"),
         DeclareLaunchArgument('use_rgbd', default_value='true'),
         DeclareLaunchArgument('filter', default_value='none', choices=['object', 'deskew', 'none']),
+        DeclareLaunchArgument('rviz_config', default_value=os.path.join(simulation_dir, 'config', 'mapping.rviz'),
+                              description='RViz config, e.g. autonomy/navigation/config/robot.rviz (the real robot one)'),
         
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(launch_dir, 'gazebo.launch.py')),
@@ -88,7 +90,7 @@ def generate_launch_description():
         Node(
             package='rviz2',
             executable='rviz2',
-            arguments=['-d', os.path.join(simulation_dir, 'config', 'mapping.rviz')],
+            arguments=['-d', LaunchConfiguration('rviz_config')],
             parameters=[{'use_sim_time': True}],
             output='screen',
         ),

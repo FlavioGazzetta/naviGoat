@@ -68,6 +68,19 @@ Then **one** of these (only one launch at a time):
 Other flags: `filter:=deskew|object|none` (default `deskew`), `enable_motors:=false`, `rviz:=true` (RViz on the Jetson,
 heavy), `places_file:=...`, `pioneer_port:=...` / `lidar_port:=...` (only if the base or lidar don't connect).
 
+### Just drive with the keyboard (no lidar, no map, no Nav2)
+
+🐳 Only the base and its motors. Not together with a navigation launch (two base drivers on one port both fail):
+```bash
+source /workspace/install/setup.bash
+ros2 launch bringup base.launch.py
+```
+Wait for `Connected to Imperial_3097`, then 🐳 in a second terminal:
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+The base's port is found automatically (add `port:=...` only if it doesn't connect).
+
 ## 4. RViz on the laptop
 
 From the repository root on the laptop (built once with `colcon build`, for the robot's 3D model):
@@ -110,6 +123,24 @@ ros2 topic echo /navigation/places --once --qos-durability transient_local   # t
 
 By voice: "Pete, remember this place as the kitchen", "Pete, take me to the kitchen".
 
+### Test going to an object (fake middleman + perception)
+
+🐳 First switch to object mode (otherwise the object position is ignored), then send where the object is. The robot
+stops 0.8 m before it, facing it. Watch `ros2 topic echo /navigation/status`: `waiting:chair` → `going:chair` →
+`arrived:chair`.
+
+```bash
+ros2 topic pub --once /middleman/mode std_msgs/msg/String "{data: '{\"mode\": \"object\", \"target\": \"chair\", \"stop\": false}'}"
+```
+then **one** of:
+```bash
+# relative to the camera: x = metres in front, y = metres to the left (negative = right). Just measure it
+ros2 topic pub --once /object_mapping geometry_msgs/msg/PointStamped "{header: {frame_id: camera_link}, point: {x: 2.0, y: 0.0}}"
+# a spot on the map: in RViz pick the Publish Point tool and only HOVER over the spot, the map x/y show in the status bar
+ros2 topic pub --once /object_mapping geometry_msgs/msg/PointStamped "{header: {frame_id: map}, point: {x: -1.8, y: 0.3}}"
+```
+Don't click with Publish Point: a click adds a test person there (click again to remove it).
+
 ## 6. Check that things work
 
 
@@ -121,6 +152,19 @@ ros2 topic echo /social_perception/tracks --no-daemon --field data   # what the 
 ```
 `--no-daemon` avoids `ros2 topic echo` wrongly saying "not published yet" after restarts. If `hz` shows nothing right
 after a restart, run `ros2 daemon stop` and try again.
+
+**Vibrations** (what navigation sends to the devices), 🐳:
+```bash
+ros2 topic echo /handle/vibration --no-daemon --field data      # handle: the next turn on the path
+ros2 topic echo /wristband/vibration --no-daemon --field data   # wristband: the closest person
+```
+Each message is `[side, strength]`: side `0` = left, `1` = right, strength `0`–`255` (`0` = off).
+- **Handle**: only while driving a goal, when a turn on the path comes within 2 m. Sharper turn = stronger.
+- **Wristband**: only while the robot moves, when a person is within 1.2 m (`social:=true`, or a test person clicked
+  with Publish Point). Closer = stronger, 255 at 0.5 m.
+- Both are sent 10 times a second; a `0` to the old side comes first when the side changes.
+- To make the devices actually vibrate, their nodes have to run too (`ros2 launch bringup launch.py ...`, or see the
+  [interaction README](../../interaction/README.md)).
 
 ## 7. Stop
 

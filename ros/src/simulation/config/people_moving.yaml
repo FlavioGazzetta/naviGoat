@@ -1,0 +1,18 @@
+# Scenario 3 of navigation_scenarios.md: people walking in the indoor world.
+# Read by people_node.py through navigation_sim.launch.py fake_people:=<this file>.
+#
+#   ros2 launch $SIM fake_people:=/workspace/ros/src/simulation/config/people_moving.yaml
+#
+# Map coordinates in metres (see people_static.yaml for the room and the test route). Each walker goes back and forth
+# between from and to at speed m/s, starting at `from` when people_node starts, so where they are when you send a goal
+# depends on when you send it. They are only in RViz (purple cylinders, with an arrow in front of them) and in Nav2's
+# costmaps (social layer): Gazebo and the lidar don't see them. The social layer also puts an expensive strip where each
+# walker will be in the next 2 s, so the robot should pass behind them rather than cut in front.
+people:
+  # W1: crosses the start -> desk -> door diagonal, north-south at x = 1.75 (stops 0.8 m short of the box).
+  - {from: [1.75, -4.2], to: [1.75, -0.3], speed: 0.6}
+  # W2: crosses the door <-> desk diagonal, east-west at y = 1.5 (stops before the box).
+  - {from: [-4.2, 1.5], to: [0.8, 1.5], speed: 0.5}
+  # W3: walks along the desk -> chair line, about 1 m north of it, and crosses the chair -> start leg: the robot meets
+  #     them head-on or overtakes them, depending on timing.
+  - {from: [-3.8, -2.2], to: [1.8, -2.2], speed: 0.8}

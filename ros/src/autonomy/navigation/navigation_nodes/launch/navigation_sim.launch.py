@@ -60,6 +60,9 @@ def generate_launch_description():
         # Localisation by default: Nav2 needs a finished map, and saved places only make sense on a map that stays the same.
         DeclareLaunchArgument('mode', default_value='localisation', choices=['mapping', 'localisation']),
         DeclareLaunchArgument('world', default_value='indoor.sdf'),
+        # the real robot's RViz (autonomy/navigation/config/robot.rviz) by default, so the sim looks like the robot
+        DeclareLaunchArgument('rviz_config', default_value=os.path.join(SRC_DIR, 'autonomy', 'navigation', 'config', 'robot.rviz'),
+                              description='RViz config file'),
         DeclareLaunchArgument('fake_people', default_value='none', description='YAML file of made-up people, for testing'),
         DeclareLaunchArgument('real_people', default_value='false', choices=['true', 'false'],
                               description="real people from Enid's tracker and the real camera, on the simulated map"),
@@ -78,7 +81,8 @@ def generate_launch_description():
         # Gazebo, RTAB-Map, Nav2 and RViz, from the simulation folder
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(SRC_DIR, 'simulation', 'launch', 'simulation.launch.py')),
-            launch_arguments={'mode': LaunchConfiguration('mode'), 'world': LaunchConfiguration('world')}.items(),
+            launch_arguments={'mode': LaunchConfiguration('mode'), 'world': LaunchConfiguration('world'),
+                              'rviz_config': LaunchConfiguration('rviz_config')}.items(),
         ),
         # and our nodes
         OpaqueFunction(function=launch_navigation),

@@ -1,0 +1,21 @@
+# Scenario 2 of navigation_scenarios.md: people standing still in the indoor world.
+# Read by people_node.py through navigation_sim.launch.py fake_people:=<this file>.
+#
+#   ros2 launch $SIM fake_people:=/workspace/ros/src/simulation/config/people_static.yaml
+#
+# Map coordinates in metres. indoor.sdf is a 10 x 10 m room (walls at +-5), with a 1 x 1 m box at (2, 1) and the robot
+# starting at (0, 0) facing +x, so the map frame is the world frame. The test route (navigation_scenarios.md) is:
+#   start (0, 0) -> desk (3.5, -3) -> door (-3.5, 3) -> desk -> chair (object at -3.5, -3.5) -> start
+# The people are only in RViz (purple cylinders) and in Nav2's costmaps (social layer). Gazebo and the lidar don't see
+# them. Every person is at least 2 m from the goals, so the robot can still reach them.
+people:
+  # A: two people talking, 1.6 m apart, right across the start -> desk -> door diagonal. The gap is too narrow
+  #    with their personal space, so the robot goes around them.
+  - {x: 2.3, y: -0.9}
+  - {x: 1.2, y: -2.1}
+  # B: someone standing alone on the door <-> desk diagonal: the robot leaves them about 1 m.
+  - {x: -1.75, y: 1.5}
+  # C: two people talking 2.0 m apart, across the desk -> chair line (y ~ -3.3). The robot would fit through the gap,
+  #    but the group rule (group_distance 2.2 m) makes it go around them instead.
+  - {x: 0.0, y: -2.2}
+  - {x: 0.0, y: -4.2}
