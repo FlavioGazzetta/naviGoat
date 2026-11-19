@@ -3,8 +3,6 @@
 Copy-paste instructions for the real robot. What the topics are and how it works: [TOPICS.md](TOPICS.md). The old, long
 README (Gazebo tests and details): [README_archive.md](README_archive.md).
 
-**Where each command runs** is marked: 💻 laptop, 🤖 Jetson (outside Docker), 🐳 inside the container on the Jetson.
-
 ## 1. Connect to the Jetson
 
 ### USB cable (most reliable)
@@ -34,10 +32,10 @@ cd ~/naviGoat
 docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus all --privileged -v /dev:/dev \
   -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 ```
-- More terminals in the same container: 🤖 `docker exec -it navigoat-dev bash`
+- More terminals in the same container: `docker exec -it navigoat-dev bash`
 - The base and lidar ports are found automatically. For social nav the image needs Pete's extras:
 `docker build -f docker/Dockerfile.dev --build-arg PETE=true -t navigoat:dev .`
-- First time only, build: 🐳 `cd /workspace && colcon build --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install`
+- First time only, build: `cd /workspace && colcon build --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install`
 
 ## 3. Launch
 
