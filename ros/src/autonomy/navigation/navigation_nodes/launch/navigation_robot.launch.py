@@ -117,15 +117,17 @@ def generate_launch_description():
             }.items(),
         ),
         # Nav2 with the real-robot params. Not with teleop:=true, so the keyboard has /cmd_vel to itself.
-        # bond_timeout: Nav2's lifecycle manager switches ALL of Nav2 off if one server misses its heartbeat for 4 s
-        # (the default), and then every goal is rejected ("Action server is inactive"). On the Jetson the controller
-        # can stall that long while RTAB-Map loads the map at startup, so give it 10 s. navigation_launch.py doesn't pass
-        # the params file to the lifecycle manager, so it's set here, only for the nodes in this group
+        # bond_timeout 0 = no heartbeat check. With it, Nav2's lifecycle manager switches ALL of Nav2 off as soon as one
+        # server misses its heartbeat (4 s by default; 10 s wasn't enough either), and then every goal is rejected
+        # ("Action server is inactive"). On the Jetson that kept happening at startup, while RTAB-Map loads the map.
+        # Without the check, a really crashed controller isn't noticed by Nav2, but the robot still stops: the base
+        # driver zeroes the speed when no cmd_vel arrives for 0.2 s. navigation_launch.py doesn't pass the params file
+        # to the lifecycle manager, so it's set here, only for the nodes in this group
         GroupAction(
             condition=UnlessCondition(LaunchConfiguration('teleop')),
             scoped=True,
             actions=[
-                SetParameter(name='bond_timeout', value=10.0),
+                SetParameter(name='bond_timeout', value=0.0),
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('nav2_bringup'), 'launch', 'navigation_launch.py'])),
                     launch_arguments={'params_file': NAV2_PARAMS, 'use_sim_time': 'false', 'use_composition': 'False'}.items(),

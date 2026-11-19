@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- ROS 2 (Fast DDS) on this laptop over the Jetson's USB cable only, while Wi-Fi stays on for the internet.
+     Use in the laptop terminal you start RViz / ros2 from (from the repository root):
+         export FASTRTPS_DEFAULT_PROFILES_FILE=$PWD/ros/src/autonomy/navigation/config/fastdds_usb.xml
+     192.168.55.100 = this laptop on the USB cable, 192.168.55.1 = the Jetson. -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>usb_only</transport_id>
+      <type>UDPv4</type>
+      <!-- the laptop introduces itself to the Jetson's ROS processes by address. The default only reaches the first
+           4 processes there; the full launch has dozens, so the rest (odom, map, Nav2...) never saw the laptop -->
+      <maxInitialPeersRange>120</maxInitialPeersRange>
+      <interfaceWhiteList>
+        <address>192.168.55.100</address>
+        <address>127.0.0.1</address>
+      </interfaceWhiteList>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="usb_only_participant" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>usb_only</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+      <builtin>
+        <initialPeersList>
+          <locator>
+            <udpv4>
+              <address>192.168.55.1</address>
+            </udpv4>
+          </locator>
+        </initialPeersList>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>

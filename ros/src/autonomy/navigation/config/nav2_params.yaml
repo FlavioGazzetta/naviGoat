@@ -312,7 +312,12 @@ global_costmap:
       footprint: "[[0.26, 0.26], [-0.26, 0.26], [-0.26, -0.26], [0.26, -0.26]]"
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "obstacle_layer", "social_layer", "inflation_layer"]
+      # no obstacle_layer (live lidar) in the global costmap: it places each scan using the robot's estimated position
+      # on the map, and in localisation that estimate is often a bit off, so the real corridor walls got stamped inside
+      # the map's free corridor and the planner found no path. The planner now plans on the saved map (+ people); new
+      # obstacles are handled by the local costmap (the controller slows down / stops and Nav2 replans). The
+      # obstacle_layer settings below are kept: add it back to this list to use it again
+      plugins: ["static_layer", "social_layer", "inflation_layer"]
       social_layer:  # the people from people_node.py and the social rules: see autonomy/navigation/README.md
         plugin: "social_layer::SocialLayer"
         people_topic: /people
