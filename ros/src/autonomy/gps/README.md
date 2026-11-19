@@ -16,6 +16,8 @@ These are all the topics you need to connect anything to the GPS layer. Every na
 | --- | --- | --- | --- |
 | `/middleman/mode` | `std_msgs/String` (JSON) | middleman | `gps` with a target → plan a route there and read it back. `stop`, or any other mode (location, object, follow, manual, help...) → stop our trip, if there is one. `idle` with nothing running does nothing |
 | `/gps/go` | `std_msgs/Empty` | the handle button (to be wired) | the user's go: start the route, cross the road, carry on after a pause. Ignored when no GPS trip is running, so the button can stay wired in indoor modes |
+| | | | With `auto_go: true` in [config/gps.yaml](guide_bringup/config/gps.yaml) (the setting now, as the robot has no go button) no go is needed: the trip sets off as soon as the route is planned and carries on at every road crossing without waiting, and "Press go ..." is not spoken. The robot then crosses roads on its own: set it to `false` once there is a button |
+| `/gps/here` | `std_msgs/String` | middleman | "GPS, I'm at X": the name of the place the user says they are at. Used as the start of routes while there is no GPS position, and kept for later runs (see "Without a GPS position") |
 | `/gps/fix` | `sensor_msgs/NavSatFix` | a GPS driver (none yet) | where the robot is. Sensor QoS (best effort), like any driver publishes |
 | `/imu/data` | `sensor_msgs/Imu` | the IMU driver | the robot's heading (the orientation field must be filled in) |
 | TF `map → base_link` | | RTAB-Map + the base driver | the robot's SLAM pose, fused with the GPS |
@@ -30,6 +32,7 @@ These are all the topics you need to connect anything to the GPS layer. Every na
 | `/middleman/failed` | `std_msgs/String` | middleman | the reason, ready to be spoken, when we give up ("I don't know a place called 'x', and OpenStreetMap has nothing by that name near here."). The middleman says it and goes back to idle |
 | `/gps/crossing_wait` | `std_msgs/Bool` (latched) | handle / wristband (to be wired) | `true` while the robot waits at a crossing for the user's go |
 | `/gps/status` | `std_msgs/String` | us, for debugging | `planning:x`, `ready:x`, `going:x`, `waiting:crossing`, `paused:x`, `gps_weak:x`, `position_lost:x`, `rerouting:x`, `arrived:x`, `cancelled:x`, `failed:<reason>` (same style as `/navigation/status`) |
+| `/gps/waypoints` | `nav_msgs/Path` (latched) | navigation | the route as points every 5 m (`waypoint_spacing`), x and y in metres east and north of the origin in [config/gps.yaml](guide_bringup/config/gps.yaml) (frame `enu`), each with the direction of travel; the last point is the destination. Published when a trip sets off and again after a reroute; an empty path when the trip ends (stop, arrived, failed) or before one has started |
 | `/gps/health` | `std_msgs/String` (JSON, latched) | anyone asking "why won't it go?" | what is running, see below |
 
 We never repeat what the middleman already says: it says "GPS to science museum." when it starts us, "Arrived." after `/middleman/done`, and its own reply to "stop". A failure goes on `/middleman/failed` and the middleman speaks it, so it is said once.
@@ -218,6 +221,18 @@ A name that is not in the list is looked up on OpenStreetMap's Nominatim, inside
 - There is no spoken "go": the middleman has no phrase for it. Whether a spoken go at a road crossing is safe enough is a team decision.
 
 The turn vibrations need nothing: feedback_node reads Nav2's `/plan`, which follows our goals. And places_node cancels its own goal when the mode becomes `gps`, so the two never drive Nav2 at the same time.
+
+## Without a GPS position
+
+The position routes start from is, in this order:
+
+1. **The real position**: the GPS fused with SLAM. With a GPS fix but no SLAM pose, the fix itself.
+2. **The last place we knew**, kept in `~/.local/share/navigoat/gps_start.json` (`assumed_file`): the last GPS fix, or the place the user stated since. "Pete, GPS, I'm at the Abdus Salam Library" states a place: the middleman tidies the name with Claude and publishes it on `/gps/here`, we look it up like a destination (our list, then OpenStreetMap), and Pete answers "Okay, starting from Abdus Salam Library." A stated place only counts while the GPS has nothing: while fixes arrive it is refused ("The GPS already knows where we are."), and the next fix replaces it.
+3. **The Electrical Engineering building at Imperial College** (`assumed_lat`, `assumed_lon` in [config/gps.yaml](guide_bringup/config/gps.yaml)), when nothing was ever stored, 10 s after start.
+
+For 2 and 3 the position is reported as weak ("GPS signal is weak. Continuing carefully."), and nothing can be sent to Nav2, because where the SLAM map lies in the world is unknown: the route only goes out on `/gps/waypoints`. The robot does not move along the route in this state: it stays "at" that place.
+
+With `require_nav2: false` (the setting now) a trip also starts when Nav2 is not running; `/gps/health` still reports that Nav2 is missing.
 
 ## Known limits
 

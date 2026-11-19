@@ -18,11 +18,17 @@ Every goal sent gets a new goal_id. Anything that arrives for an older goal
 While something needed for a trip is missing (guide_core.health: no position,
 Nav2 or our planner not running...), the node sets a blocker sentence and a
 GPS request is refused at once with it, without sending a goal.
+
+With auto_go (for a robot with no go button) the bridge gives the go itself:
+the trip starts as soon as the route is planned and carries on at every road
+crossing, and "Press go ..." is left out of what is spoken. A pause still waits
+for a real go, and stop still stops.
 """
 
 from dataclasses import dataclass
 from enum import Enum
 import json
+import re
 
 from guide_core.mission import MissionError, MissionState
 
@@ -53,6 +59,9 @@ FAILURE_TEXTS = {
     MissionError.BUSY: 'GPS navigation is busy with another trip.',
     MissionError.INVALID_GOAL: 'That destination is not valid.',
 }
+# With auto_go the bridge gives the go in these states, and does not say "Press go ...".
+AUTO_GO_STATES = (MissionState.READY, MissionState.WAITING_AT_CROSSING)
+PRESS_GO_SENTENCE = re.compile(r'\s*Press go\b[^.!?]*[.!?]')
 DEFAULT_FAILURE_TEXT = 'GPS navigation failed.'
 UNAVAILABLE_TEXT = "GPS navigation isn't running."
 REJECTED_TEXT = 'GPS navigation refused the request.'
@@ -135,10 +144,14 @@ def failure_slug(error_code):
 
 @dataclass(frozen=True)
 class StartMission:
-    """Send a NavigateTo goal (TARGET_NAME) for target; tag what comes back with goal_id."""
+    """Send a NavigateTo goal (TARGET_NAME) for target; tag what comes back with goal_id.
+
+    skip_confirmation: set off as soon as the route is planned, without a go.
+    """
 
     goal_id: int
     target: str
+    skip_confirmation: bool = False
 
 
 @dataclass(frozen=True)
@@ -199,8 +212,10 @@ class Bridge:
     be carried out.
     """
 
-    def __init__(self, gps_mode=GPS_MODE):
+    def __init__(self, gps_mode=GPS_MODE, auto_go=False):
         self._gps_mode = gps_mode
+        self._auto_go = bool(auto_go)
+        self._auto_go_state = None  # the waiting state our own go was last sent for
         self._goal_id = 0
         self._active = False
         self._target = ''
@@ -255,7 +270,8 @@ class Bridge:
             self._target = request.target
             self._last_said = ''
             self._last_status = ''
-            commands += (StartMission(self._goal_id, request.target),)
+            self._auto_go_state = None
+            commands += (StartMission(self._goal_id, request.target, self._auto_go),)
         return commands
 
     def on_go(self):
@@ -267,9 +283,16 @@ class Bridge:
     # --- what our mission manager reports ---
 
     def on_go_reply(self, goal_id, accepted, text):
-        """Speak a refused go every time; an accepted one is told by the next message."""
+        """Speak a refused go every time; an accepted one is told by the next message.
+
+        With auto_go a refused go is not spoken: it was ours, and it is sent again
+        with the next state update while the mission still waits.
+        """
         text = (text or '').strip()
         if not self._is_current(goal_id) or accepted or not text:
+            return ()
+        if self._auto_go:
+            self._auto_go_state = None
             return ()
         return (Say(text),)
 
@@ -284,6 +307,12 @@ class Bridge:
             commands += (Status(line),)
         if state not in SILENT_STATES:
             commands += self._say_once(message)
+        if self._auto_go:
+            if state not in AUTO_GO_STATES:
+                self._auto_go_state = None
+            elif state != self._auto_go_state:   # once each time the mission starts waiting
+                self._auto_go_state = state
+                commands += (SendGo(self._goal_id),)
         return commands
 
     def on_result(self, goal_id, error_code, message):
@@ -330,6 +359,8 @@ class Bridge:
 
     def _say_once(self, text):
         text = (text or '').strip()
+        if self._auto_go:
+            text = PRESS_GO_SENTENCE.sub('', text).strip()
         if not text or text == self._last_said:
             return ()
         self._last_said = text

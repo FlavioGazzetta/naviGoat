@@ -2,7 +2,7 @@
 
 import math
 
-from guide_core.polyline import point_segment_distance, simplify_polyline
+from guide_core.polyline import point_segment_distance, resample_polyline, simplify_polyline
 import pytest
 
 
@@ -94,3 +94,39 @@ def test_result_stays_within_tolerance():
     for p in points:
         nearest = min(point_segment_distance(p, points[a], points[b]) for a, b in segments)
         assert nearest <= 0.5 + 1e-9
+
+
+# --- resample_polyline ---
+
+def test_resample_straight_line_every_five_metres():
+    points = resample_polyline([(0, 0), (20, 0)], 5.0)
+    assert [(x, y) for x, y, _ in points] == [(0, 0), (5, 0), (10, 0), (15, 0), (20, 0)]
+    assert all(heading == 0.0 for _, _, heading in points)
+
+
+def test_resample_keeps_the_end_when_the_last_step_is_short():
+    points = resample_polyline([(0, 0), (12, 0)], 5.0)
+    assert [(x, y) for x, y, _ in points] == [(0, 0), (5, 0), (10, 0), (12, 0)]
+
+
+def test_resample_measures_along_the_line_round_a_corner():
+    # 8 m east, then 8 m north: the points are 5 m apart along the route, not in a straight line.
+    points = resample_polyline([(0, 0), (8, 0), (8, 8)], 5.0)
+    assert [(round(x, 6), round(y, 6)) for x, y, _ in points] == [
+        (0, 0), (5, 0), (8, 2), (8, 7), (8, 8)]
+    assert [round(heading, 6) for _, _, heading in points] == [
+        0.0, 0.0, round(math.pi / 2, 6), round(math.pi / 2, 6), round(math.pi / 2, 6)]
+
+
+def test_resample_skips_repeated_points_and_short_lines():
+    assert resample_polyline([(1, 1), (1, 1)], 5.0) == []
+    assert resample_polyline([(1, 1)], 5.0) == []
+    assert resample_polyline([], 5.0) == []
+    points = resample_polyline([(0, 0), (0, 0), (4, 0), (4, 0)], 5.0)
+    assert [(x, y) for x, y, _ in points] == [(0, 0), (4, 0)]
+
+
+@pytest.mark.parametrize('spacing', [0.0, -1.0, math.nan, math.inf])
+def test_resample_invalid_spacing_rejected(spacing):
+    with pytest.raises(ValueError):
+        resample_polyline([(0, 0), (1, 0)], spacing)

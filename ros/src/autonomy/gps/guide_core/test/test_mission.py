@@ -500,3 +500,13 @@ def test_version_changes_with_snapshot():
 def test_config_rejects_bad_values(kwargs):
     with pytest.raises(ValueError):
         MissionConfig(**kwargs)
+
+
+def test_pick_nearest_goes_to_the_nearest_of_several_and_says_so():
+    near = Destination('North Library', 51.0, 0.0, aliases=('library',))
+    far = Destination('South Library', 51.01, 0.0, aliases=('library',))
+    m = Mission((far, near), MissionConfig(pick_nearest=True))
+    commands = m.start(MissionGoal(destination='library'), (51.0001, 0.0))
+    assert not any(isinstance(c, Finish) for c in commands)   # not refused as ambiguous
+    m.on_plan_result(commands[0].plan_id, True, '', DEMO_PLAN)
+    assert 'North Library, the nearest of 2 places with that name.' in m.snapshot().message

@@ -125,6 +125,8 @@ class MissionManagerNode(Node):
         # answer "I don't know that place" at once (false). Whether the
         # geocoder may go online is ITS parameter (online_enabled).
         self.declare_parameter('use_geocoder', True)
+        # True: several places with the name ("pret") -> go to the nearest and say so.
+        self.declare_parameter('pick_nearest', False)
         self.declare_parameter('geocoder_timeout', 8.0)  # s; then "couldn't search"
 
         self._origin = (self.get_parameter('origin_lat').value,
@@ -141,12 +143,16 @@ class MissionManagerNode(Node):
                 failure_reset_distance=self.get_parameter('failure_reset_distance').value,
                 min_go_interval=self.get_parameter('min_go_interval').value,
                 snap_report_distance=self.get_parameter('snap_report_distance').value,
-                online_lookup=self._use_geocoder)
+                online_lookup=self._use_geocoder,
+                pick_nearest=bool(self.get_parameter('pick_nearest').value))
         except ValueError as e:
             raise StartupError(f'Invalid mission parameter: {e}') from e
         destinations = self._load_destinations(self.get_parameter('destinations_file').value)
         self._destinations = destinations          # also used by guide/resolve_destination
-        self._mission = Mission(destinations, config)
+        # With pick_nearest, more matches are worth having: the nearest may not be
+        # among the first few the map search returns.
+        match_config = MatchConfig(max_candidates=20) if config.pick_nearest else None
+        self._mission = Mission(destinations, config, match_config=match_config)
 
         # --- State kept by this node (plumbing only; decisions are in Mission) ---
         # _pose: (x, y, receive time) of the latest guide/pose, for planning.

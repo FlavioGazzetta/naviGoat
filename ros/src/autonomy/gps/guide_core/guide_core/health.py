@@ -46,6 +46,8 @@ class HealthInputs:
     last one with a fix (status >= STATUS_FIX); None = never.
     status_time: when the last guide/localization_status arrived (None =
     never), with its quality and initialised flag.
+    nav2_required: False when the route is only published as waypoints for
+    someone else to drive: Nav2 missing is then reported but blocks nothing.
     ever_localised: the position has been usable (GOOD or DEGRADED) at least
     once. The localizer starts at LOST and improves only after a hold time,
     so LOST before that means "still settling", not "lost".
@@ -62,6 +64,7 @@ class HealthInputs:
     mission_ready: bool = False
     planner_ready: bool = False
     nav2_ready: bool = False
+    nav2_required: bool = True   # False: a trip may start without Nav2 (waypoints only)
     geocoder_ready: bool = False
 
 
@@ -165,7 +168,7 @@ def evaluate(inputs, config=None):
         'mission': server_part('mission', inputs.mission_ready, 'mission manager'),
         'position': position_part(inputs, config),
         'planner': server_part('planner', inputs.planner_ready, 'route planner'),
-        'nav2': server_part('nav2', inputs.nav2_ready, 'Nav2'),
+        'nav2': server_part('nav2', inputs.nav2_ready, 'Nav2', blocks=inputs.nav2_required),
         'gps': gps,
         'geocoder': server_part('geocoder', inputs.geocoder_ready, 'geocoder', blocks=False),
     }

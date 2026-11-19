@@ -21,17 +21,22 @@ Try it by hand (the mission manager and the rest of our stack must be running):
   ros2 topic pub -w 1 --once /gps/go std_msgs/msg/Empty
 """
 
+import json
+import math
 import time
 
+from geometry_msgs.msg import PoseStamped
 from guide_core.bridge import (
     Bridge, CancelMission, CrossingWait, Done, Failed, parse_mode, Say, SendGo, StartMission,
     Status,
 )
 from guide_core.health import evaluate, HealthInputs
+from guide_core.polyline import resample_polyline
 from guide_interfaces.action import NavigateTo
 from guide_interfaces.msg import LocalizationStatus
-from guide_interfaces.srv import Geocode, PlanRoute
+from guide_interfaces.srv import Geocode, PlanRoute, ResolveDestination
 from nav2_msgs.action import NavigateToPose
+from nav_msgs.msg import Path
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.executors import ExternalShutdownException
@@ -57,6 +62,8 @@ TOPICS = {
     'status_topic': '/gps/status',               # out: 'going:x', 'waiting:crossing', ...
     'crossing_wait_topic': '/gps/crossing_wait',  # out: true while waiting at a crossing
     'health_topic': '/gps/health',               # out: what is running (JSON, latched)
+    'here_topic': '/gps/here',                   # in:  "GPS, I'm at X": the place the user is at
+    'waypoints_topic': '/gps/waypoints',         # out: the route as points every few metres
     'gps_topic': '/gps/fix',                     # in:  the GPS receiver, for the health check
 }
 
@@ -67,6 +74,9 @@ USER_GO_SERVICE = 'guide/user_go'
 PLAN_SERVICE = 'guide/plan_route'
 GEOCODE_SERVICE = 'guide/geocode'
 STATUS_TOPIC = 'guide/localization_status'
+RESOLVE_SERVICE = 'guide/resolve_destination'   # a place name -> where it is
+ASSUMED_TOPIC = 'guide/assumed_position'        # to the localizer: where the user says we are
+ROUTE_TOPIC = 'guide/route'   # the route follower's current route (latched; empty = none)
 HEALTH_PERIOD = 1.0   # s between health checks
 
 # Said when the user presses go but our mission manager is not running.
@@ -97,7 +107,17 @@ class GpsBridgeNode(Node):
         # Keep it the same as the goal sender's action_name.
         nav2_action = self.declare_parameter('nav2_action', 'navigate_to_pose').value
         self._gps_topic = topic['gps_topic']
-        self._bridge = Bridge(gps_mode)
+        # True for a robot with no go button: the trip starts once the route is
+        # planned and carries on at every road crossing without waiting for a go.
+        auto_go = self.declare_parameter('auto_go', False).value
+        # Metres between the points published on waypoints_topic.
+        self._waypoint_spacing = self.declare_parameter('waypoint_spacing', 5.0).value
+        # False: start a trip even when Nav2 is not running. The route is then only
+        # published on waypoints_topic, for navigation to drive.
+        self._require_nav2 = self.declare_parameter('require_nav2', True).value
+        self._bridge = Bridge(gps_mode, auto_go)
+        self._route = None            # the route follower's latest route (a Path)
+        self._waypoints_sent = False  # True while waypoints_topic holds a route
 
         # --- Goals in flight ---
         # The mission manager runs one goal at a time and answers a goal sent
@@ -116,6 +136,7 @@ class GpsBridgeNode(Node):
         self._nav2_client = ActionClient(self, NavigateToPose, nav2_action)
         self._plan_client = self.create_client(PlanRoute, PLAN_SERVICE)
         self._geocode_client = self.create_client(Geocode, GEOCODE_SERVICE)
+        self._resolve_client = self.create_client(ResolveDestination, RESOLVE_SERVICE)
 
         # --- What the health check has heard (times in seconds, None = never) ---
         self._gps_message_time = None
@@ -136,20 +157,28 @@ class GpsBridgeNode(Node):
                                                    LATCHED_QOS)
         self._crossing_pub.publish(Bool(data=False))  # a known value from the start
         self._health_pub = self.create_publisher(String, topic['health_topic'], LATCHED_QOS)
+        self._waypoints_pub = self.create_publisher(Path, topic['waypoints_topic'], LATCHED_QOS)
+        self._waypoints_pub.publish(Path())  # no trip yet: an empty path
+        self._assumed_pub = self.create_publisher(String, ASSUMED_TOPIC, 10)
 
         # --- Subscriptions (the team's topics) ---
         self.create_subscription(String, topic['mode_topic'], self._on_mode, 10)
         self.create_subscription(Empty, topic['go_topic'], self._on_go, 10)
+        self.create_subscription(String, topic['here_topic'], self._on_here, 10)
         # For the health check: the GPS receiver (sensor QoS, as its driver
         # publishes with) and the localizer's status (2 Hz, reliable).
         self.create_subscription(NavSatFix, self._gps_topic, self._on_gps_fix,
                                  qos_profile_sensor_data)
         self.create_subscription(LocalizationStatus, STATUS_TOPIC, self._on_status, 10)
+        self.create_subscription(Path, ROUTE_TOPIC, self._on_route, LATCHED_QOS)
         self.create_timer(HEALTH_PERIOD, self._check_health)
 
         self.get_logger().info(
             f"GPS bridge ready: mode '{gps_mode}' on {topic['mode_topic']}, "
             f"go on {topic['go_topic']}, goals to {ACTION_NAME}")
+        self.get_logger().info(
+            f"Waypoints every {self._waypoint_spacing:g} m on {topic['waypoints_topic']}; "
+            + ('auto go: trips start and cross without a go' if auto_go else 'waiting for go'))
 
     # ---- The team's inputs ----------------------------------------------------------
 
@@ -163,6 +192,85 @@ class GpsBridgeNode(Node):
     def _on_go(self, msg):
         """Pass the user's go to the bridge (ignored when no GPS trip is running)."""
         self._run(self._bridge.on_go())
+
+    # ---- "GPS, I'm at X" -------------------------------------------------------------
+
+    def _on_here(self, msg):
+        """Look up the place the user says they are at, and tell the localizer.
+
+        The look-up is the one a destination gets (our list, then OpenStreetMap).
+        The localizer keeps the place on disk and uses it while there is no real
+        position; a real GPS position always wins.
+        """
+        place = ' '.join(msg.data.split())
+        if not place:
+            return
+        if self._gps_fix_time is not None and self._now() - self._gps_fix_time < 10.0:
+            self._say('The GPS already knows where we are.')   # a stated place never beats a fix
+            return
+        if not self._resolve_client.service_is_ready():
+            self._say(f"I can't look up {place}: GPS navigation isn't running.")
+            return
+        request = ResolveDestination.Request()
+        request.query = place
+        request.max_candidates = 1
+
+        def done(future):
+            try:
+                response = future.result()
+            except Exception as e:  # service vanished mid-call
+                self.get_logger().error(f'{RESOLVE_SERVICE} failed: {e}')
+                self._say(f"I couldn't look up {place}.")
+                return
+            not_found = response.outcome == ResolveDestination.Response.NOT_FOUND
+            if not_found or not response.candidates:
+                self._say(f"I couldn't find {place} on the map. Say it another way.")
+                return
+            found = response.candidates[0]   # the best match, also when there are several
+            self._assumed_pub.publish(String(data=json.dumps(
+                {'name': found.name, 'lat': found.latitude, 'lon': found.longitude})))
+            self._say(f'Okay, starting from {found.name}.')
+
+        self._resolve_client.call_async(request).add_done_callback(done)
+
+    def _say(self, text):
+        self.get_logger().info(f'Say: {text}')
+        self._response_pub.publish(String(data=text))
+
+    # ---- The route as waypoints ------------------------------------------------------
+
+    def _on_route(self, msg):
+        """Keep the route follower's route (new at every start and reroute; empty = none)."""
+        self._route = msg
+        self._publish_waypoints()
+
+    def _publish_waypoints(self):
+        """Publish the route as points every waypoint_spacing metres, or an empty path.
+
+        Only while a GPS trip is running: the moment it ends (stop, arrived,
+        failed) an empty path goes out, so nobody keeps driving an old route.
+        The points are in the route's own frame (header.frame_id), with the
+        direction of travel as the orientation; the last point is the destination.
+        """
+        path = Path()
+        path.header.stamp = self.get_clock().now().to_msg()
+        if self._bridge.active and self._route is not None and self._route.poses:
+            path.header.frame_id = self._route.header.frame_id
+            line = [(p.pose.position.x, p.pose.position.y) for p in self._route.poses]
+            for x, y, heading in resample_polyline(line, self._waypoint_spacing):
+                pose = PoseStamped()
+                pose.header = path.header
+                pose.pose.position.x = x
+                pose.pose.position.y = y
+                pose.pose.orientation.z = math.sin(heading / 2.0)
+                pose.pose.orientation.w = math.cos(heading / 2.0)
+                path.poses.append(pose)
+        if not path.poses and not self._waypoints_sent:
+            return  # already empty
+        self._waypoints_sent = bool(path.poses)
+        self.get_logger().info(
+            f'Waypoints: {len(path.poses)} points' if path.poses else 'Waypoints: cleared')
+        self._waypoints_pub.publish(path)
 
     # ---- Health ---------------------------------------------------------------------
 
@@ -199,6 +307,7 @@ class GpsBridgeNode(Node):
             mission_ready=self._action_client.server_is_ready(),
             planner_ready=self._plan_client.service_is_ready(),
             nav2_ready=self._nav2_client.server_is_ready(),
+            nav2_required=self._require_nav2,
             geocoder_ready=self._geocode_client.service_is_ready())
         health = evaluate(inputs)
         self._bridge.set_blocker('' if health.ready else health.summary)
@@ -216,6 +325,8 @@ class GpsBridgeNode(Node):
         """Carry out each command; answers come back later as new events."""
         for command in commands:
             if isinstance(command, StartMission):
+                self._route = None          # an older trip's route is not this trip's
+                self._publish_waypoints()
                 self._start(command)
             elif isinstance(command, CancelMission):
                 self._cancel(command)
@@ -237,6 +348,9 @@ class GpsBridgeNode(Node):
                 self._crossing_pub.publish(Bool(data=command.waiting))
             else:
                 self.get_logger().error(f'Unknown command {command!r}')
+        if self._waypoints_sent and not self._bridge.active:
+            self._route = None
+            self._publish_waypoints()  # the trip has just ended: clear them
 
     def _start(self, command):
         """Send the goal now, or once the previous goal has ended."""
@@ -253,7 +367,8 @@ class GpsBridgeNode(Node):
         goal = NavigateTo.Goal()
         goal.target_type = NavigateTo.Goal.TARGET_NAME
         goal.destination = command.target
-        goal.skip_confirmation = False  # the user always hears the route and says go
+        # False: the user hears the route and says go. True (auto_go): it sets off at once.
+        goal.skip_confirmation = command.skip_confirmation
         slot = GoalSlot(command.goal_id)
         self._current = slot
         self.get_logger().info(f"Goal {slot.goal_id}: '{command.target}'")

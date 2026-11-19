@@ -21,13 +21,17 @@ guide_core; this node only moves data between ROS messages and those modules.
 """
 
 from dataclasses import fields
+import json
 import math
+import os
+import time
 
 # Message types. Each ROS message is a Python class with typed fields.
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped  # our outputs
 from guide_core.alignment import AlignmentConfig, AlignmentFilter, FixResult
 from guide_core.angles import quaternion_to_yaw, yaw_to_quaternion
-from guide_core.localization_quality import QualityConfig, QualityMonitor
+from guide_core.geo import latlon_to_enu
+from guide_core.localization_quality import Quality, QualityConfig, QualityMonitor
 from guide_core.localizer import (
     GpsFix, GpsLocalizer, InvalidFixError, pose_covariance_6x6, PositionEstimate)
 from guide_core.se2 import Pose2D
@@ -41,6 +45,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import Imu, NavSatFix               # our inputs
+from std_msgs.msg import String
 # tf2_ros keeps a buffer of recent transforms (TF) received on /tf, so we can ask
 # "where was base_link in the map frame at time t?".
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -96,6 +101,30 @@ class LocalizerNode(Node):
         # so it can be namespaced or remapped at launch.
         gps_topic = self.declare_parameter('gps_topic', 'gps/fix').value
         imu_topic = self.declare_parameter('imu_topic', 'imu/data').value
+        # Where to assume the robot is while there is no position at all (no GPS fix
+        # yet, or no SLAM pose to go with it): a route can then still be planned from
+        # there. nan = never assume. assume_after: seconds without a position, counted
+        # from the start of this node, before the assumed place is used.
+        assumed_lat = self.declare_parameter('assumed_lat', math.nan).value
+        assumed_lon = self.declare_parameter('assumed_lon', math.nan).value
+        self.assumed_name = self.declare_parameter('assumed_name', 'the assumed place').value
+        self.assume_after = self.declare_parameter('assume_after', 10.0).value
+        self.stated_sigma = self.declare_parameter('assumed_sigma', 5.0).value  # metres
+        self.assumed_sigma = self.stated_sigma
+        # The last place the user said they were at ("GPS, I'm at X") is kept in this
+        # file and used in place of assumed_lat / assumed_lon. '' = not kept.
+        self.assumed_file = os.path.expanduser(
+            self.declare_parameter('assumed_file', '~/.local/share/navigoat/gps_start.json').value)
+        self.origin = (origin_lat, origin_lon)
+        self.assumed_xy = None
+        if math.isfinite(assumed_lat) and math.isfinite(assumed_lon):
+            self.assumed_xy = latlon_to_enu(assumed_lat, assumed_lon, origin_lat, origin_lon)
+        self.assumed_now = False   # True once we were told where we are (a fix, or the user)
+        self.last_gps_fix = -math.inf   # when the last usable GPS fix arrived (monotonic s)
+        self.last_gps_saved = -math.inf
+        self.gps_fresh = self.declare_parameter('gps_fresh', 10.0).value  # s a fix stays "now"
+        self.load_assumed()
+        self.started = time.monotonic()
         pose_rate = self.declare_parameter('pose_rate', 10.0).value
         status_rate = self.declare_parameter('status_rate', 2.0).value
 
@@ -135,6 +164,8 @@ class LocalizerNode(Node):
             NavSatFix, gps_topic, self.on_gps_fix, qos_profile_sensor_data)
         self.imu_sub = self.create_subscription(
             Imu, imu_topic, self.on_imu, qos_profile_sensor_data)
+        # From gps_bridge: the place the user says we are at, as JSON {name, lat, lon}.
+        self.create_subscription(String, 'guide/assumed_position', self.on_assumed, 10)
 
         # --- Timers ---
         # The pose is published at a steady rate from the latest SLAM pose (not
@@ -152,6 +183,85 @@ class LocalizerNode(Node):
     def now_seconds(self):
         """Return the node clock's current time in seconds."""
         return self.get_clock().now().nanoseconds * 1e-9
+
+    def assuming(self):
+        """Return True while the assumed place stands in for a real position.
+
+        That is: a place is configured, the filter has no position yet (it needs a
+        GPS fix together with a SLAM pose), and assume_after seconds have passed.
+        The first real position ends it for good.
+        """
+        if self.assumed_xy is None or self.filter.initialised:
+            return False
+        return self.assumed_now or time.monotonic() - self.started >= self.assume_after
+
+    def set_assumed(self, data):
+        """Use {name, lat, lon} as the assumed place. Raises ValueError if it is not one."""
+        try:
+            name, lat, lon = str(data['name']), float(data['lat']), float(data['lon'])
+        except (KeyError, TypeError, ValueError) as e:
+            raise ValueError(f'not a place: {data!r}') from e
+        if not (math.isfinite(lat) and math.isfinite(lon)):
+            raise ValueError(f'not a place: {data!r}')
+        self.assumed_xy = latlon_to_enu(lat, lon, *self.origin)
+        self.assumed_name = name
+
+    def load_assumed(self):
+        """Use the place kept from an earlier run, if there is one."""
+        if not self.assumed_file or not os.path.exists(self.assumed_file):
+            return
+        try:
+            with open(self.assumed_file, encoding='utf-8') as f:
+                self.set_assumed(json.load(f))
+        except (OSError, ValueError) as e:
+            self.get_logger().warning(f'Ignoring {self.assumed_file}: {e}')
+            return
+        self.get_logger().info(f'Last stated place: {self.assumed_name} ({self.assumed_file})')
+
+    def note_gps_position(self, lat, lon, estimate):
+        """Make a real GPS fix the place we are at, and keep it for later runs.
+
+        A fix always replaces a place the user stated: those only count while the
+        GPS has nothing. Without a SLAM pose the filter cannot start, and this fix
+        is then the position that is published. Kept on disk every 10 s at most,
+        so that the next run without GPS starts from the last place GPS saw.
+        """
+        self.assumed_xy = (estimate.x, estimate.y)
+        self.assumed_name = 'the last GPS position'
+        self.assumed_sigma = max(1.0, math.sqrt(max(estimate.var_x, estimate.var_y)))
+        self.assumed_now = True
+        self.last_gps_fix = time.monotonic()
+        if self.last_gps_fix - self.last_gps_saved >= 10.0:
+            self.last_gps_saved = self.last_gps_fix
+            self.save_assumed(lat, lon)
+
+    def save_assumed(self, lat, lon):
+        """Write the assumed place to assumed_file ('' = not kept)."""
+        if not self.assumed_file:
+            return
+        try:
+            os.makedirs(os.path.dirname(self.assumed_file), exist_ok=True)
+            with open(self.assumed_file, 'w', encoding='utf-8') as f:
+                json.dump({'name': self.assumed_name, 'lat': lat, 'lon': lon}, f)
+        except OSError as e:
+            self.get_logger().warning(f'Could not save {self.assumed_file}: {e}',
+                                      throttle_duration_sec=60.0)
+
+    def on_assumed(self, msg: String):
+        """Take the place the user says we are at, unless the GPS knows better, and keep it."""
+        if time.monotonic() - self.last_gps_fix < self.gps_fresh:
+            self.get_logger().info('Stated place ignored: the GPS has a position')
+            return
+        try:
+            data = json.loads(msg.data)
+            self.set_assumed(data)
+        except ValueError as e:
+            self.get_logger().warning(f'Ignoring guide/assumed_position: {e}')
+            return
+        self.assumed_now = True
+        self.assumed_sigma = self.stated_sigma
+        self.get_logger().info(f'The user says we are at {self.assumed_name}')
+        self.save_assumed(data['lat'], data['lon'])
 
     def map_pose(self, stamp=None):
         """Return the robot's SLAM pose (map -> base_link) as a Pose2D, or None.
@@ -212,6 +322,7 @@ class LocalizerNode(Node):
             # the status topic reports "no GPS fix for N s".
             self.get_logger().debug(f'GPS fix not used: {err}')
             return
+        self.note_gps_position(msg.latitude, msg.longitude, estimate)
         # The SLAM pose at the moment the fix was MEASURED (its header stamp).
         pose = self.map_pose(msg.header.stamp)
         if pose is None:
@@ -234,6 +345,25 @@ class LocalizerNode(Node):
 
     # --- Pose timer: robot pose in ENU and the map frame in ENU ---
     def publish_pose(self):
+        if self.assuming():
+            # No real position: say we stand at the assumed place, facing east, and
+            # be honest about it in the covariance. No guide/map_in_enu: where the
+            # SLAM map lies in the world is not known, so no goal can go to Nav2.
+            x, y = self.assumed_xy
+            out = PoseWithCovarianceStamped()
+            out.header.stamp = self.get_clock().now().to_msg()
+            out.header.frame_id = self.pose_frame
+            out.pose.pose.position.x = x
+            out.pose.pose.position.y = y
+            out.pose.pose.orientation.w = 1.0
+            variance = self.assumed_sigma ** 2
+            out.pose.covariance = pose_covariance_6x6(
+                PositionEstimate(x, y, variance, variance, 0.0), math.pi ** 2)
+            self.pose_pub.publish(out)
+            self.get_logger().warning(
+                f'No position from GPS and SLAM together: using {self.assumed_name}',
+                throttle_duration_sec=30.0)
+            return
         pose = self.map_pose()
         if pose is None:
             return
@@ -281,6 +411,22 @@ class LocalizerNode(Node):
 
     # --- Status timer: GOOD / DEGRADED / LOST ---
     def publish_status(self):
+        if self.assuming():
+            # DEGRADED, not GOOD: a trip may start, and the user is told the position
+            # is uncertain. LOST would refuse every trip.
+            msg = LocalizationStatus()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = self.pose_frame
+            msg.quality = int(Quality.DEGRADED)
+            msg.reason = f'no fused position: using {self.assumed_name}'
+            msg.initialised = True
+            msg.position_sigma = float(self.assumed_sigma)
+            msg.yaw_sigma = math.pi
+            msg.seconds_since_fix = math.inf
+            msg.fixes_accepted = self.fixes_accepted
+            msg.fixes_rejected = self.fixes_rejected
+            self.status_pub.publish(msg)
+            return
         now = self.now_seconds()
         pose = self.map_pose()
         sigma = math.inf if pose is None else self.filter.position_sigma(pose)

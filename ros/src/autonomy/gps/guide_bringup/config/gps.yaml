@@ -22,6 +22,33 @@ localizer:
     imu_topic: /imu/data         # sensor_msgs/Imu with an orientation (heading)
     map_frame: map               # RTAB-Map's frame
     base_frame: base_link        # the robot's body frame
+    # When in doubt, assume we are here: used while there is no position at all (no GPS
+    # fix yet, or no SLAM pose), so a route can still be planned. The first real
+    # position replaces it. Remove the two numbers (or set them to .nan) to never assume.
+    # "GPS, I'm at X" replaces this place and is kept in assumed_file for later runs.
+    assumed_file: ~/.local/share/navigoat/gps_start.json
+    assumed_name: the Electrical Engineering building
+    assumed_lat: 51.4991         # Imperial College, EEE building (Dalby Court side)
+    assumed_lon: -0.1753
+    assume_after: 10.0           # seconds without a position before assuming
+
+# The route planner. A start or a destination may be this far (m) from the nearest
+# walkway: a place looked up by name is the middle of its building, and for a large
+# one (a museum, a library) that is well over the planner's own 60 m.
+route_planner:
+  ros__parameters:
+    walkway_snap_distance: 150.0
+
+# The trip. pick_nearest: when several places have the name ("pret"), go to the one
+# nearest to us and say so, instead of reading the options out and asking.
+mission_manager:
+  ros__parameters:
+    pick_nearest: true
+
+# The online search. More results than its own 5, so that the nearest is among them.
+geocoder:
+  ros__parameters:
+    max_results: 20
 
 # Our client of Nav2.
 goal_sender:
@@ -34,12 +61,23 @@ gps_bridge:
   ros__parameters:
     mode_topic: /middleman/mode
     go_topic: /gps/go
+    here_topic: /gps/here           # "GPS, I'm at X": the place name, from the middleman
     response_topic: /pete/response
     done_topic: /middleman/done
     failed_topic: /middleman/failed
     status_topic: /gps/status
     crossing_wait_topic: /gps/crossing_wait
     health_topic: /gps/health
+    # The route as points every waypoint_spacing metres, for navigation (nav_msgs/Path,
+    # latched): published when a trip sets off and after a reroute, emptied when it ends.
+    waypoints_topic: /gps/waypoints
+    waypoint_spacing: 5.0           # metres
+    # true: there is no go button, so the trip starts as soon as the route is planned
+    # and carries on at every road crossing without waiting. false: wait for go_topic.
+    auto_go: true
+    # false: a trip may start without Nav2 running; the route is then only published on
+    # waypoints_topic for navigation to drive. true: refuse the trip ("I can't drive").
+    require_nav2: false
     gps_mode: gps                   # the middleman's mode name for "GPS take me to ..."
     # For the health check only: keep these equal to localizer.gps_topic and
     # goal_sender.action_name above.

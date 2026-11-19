@@ -15,6 +15,7 @@
     failed_topic         /middleman/failed    in   the robot gave up on a location, object or GPS request: the text is the reason,
                                                    ready to be spoken; it is said and the mode goes back to idle
     save_place_topic     /navigation/save_place  out  the name from "remember this place as X"; navigation saves the robot's position under it
+    gps_here_topic       /gps/here               out  the place from "GPS, I'm at X", tidied by Claude; the GPS layer starts its routes there when it has no fix
     places_topic         /navigation/places   in   JSON list of the names navigation has saved (latched): understood like the catalog's places
 
 Every topic name above is a ROS parameter (the name in the first column, the default in the second), and so is use_qwen.
@@ -44,7 +45,7 @@ TOPICS = {
     'speech_topic': '/speech/text', 'response_topic': '/pete/response', 'middleman_mode_topic': '/middleman/mode',
     'heard_topic': '/middleman/heard', 'mode_topic': '/mode', 'goal_topic': '/goal', 'status_topic': '/object_status',
     'description_topic': '/scene_description', 'done_topic': '/middleman/done', 'failed_topic': '/middleman/failed',
-    'save_place_topic': '/navigation/save_place', 'places_topic': '/navigation/places',
+    'save_place_topic': '/navigation/save_place', 'gps_here_topic': '/gps/here', 'places_topic': '/navigation/places',
     'following_status_topic': '/person_following/status'}
 
 CANNOT_ANSWER = "Sorry, I can only describe what is in front of me."
@@ -59,6 +60,21 @@ def mode_messages(mode, target=''):
 
 # "Describe what's in front of me in detail": the long description. Without these words it is the short one.
 DETAIL = re.compile(r"\b(in (more |great |full )?detail|detailed|in depth|thoroughly|everything)\b")
+
+
+PLACE_PROMPT = """A speech recogniser heard someone say the name of a place in or near South Kensington, London: Imperial \
+College's campus and buildings, the museums, the stations, streets and shops. The words may be misheard or misspelt. Answer \
+with only the real name of the place they most likely meant, as a map would write it, and nothing else. If you cannot tell, \
+answer with the words exactly as heard."""
+
+
+def place_name(heard):
+    """The place the user said they are at, as a map would write it ("abdus salsam library" -> "Abdus Salam Library").
+    Claude tidies what Whisper heard, so the GPS layer's map look-up finds it; without Claude, the words as heard."""
+    import llm
+    answer = llm.ask_cloud(PLACE_PROMPT, heard, max_tokens=60)
+    answer = (answer or '').strip().strip('."\'').splitlines()[0].strip() if answer and answer.strip() else ''
+    return answer if answer and len(answer) <= 80 else heard
 
 
 def describe_messages(detail=False):
@@ -89,6 +105,7 @@ def main():
     mode_pub = node.create_publisher(String, topic['middleman_mode_topic'], 10)
     ack_pub = node.create_publisher(String, topic['heard_topic'], 10)
     save_place_pub = node.create_publisher(String, topic['save_place_topic'], 10)
+    gps_here_pub = node.create_publisher(String, topic['gps_here_topic'], 10)
     perception = {name: node.create_publisher(String, topic[name], 10) for name in ('mode_topic', 'goal_topic')}
 
     interpreter = qwen_interpreter() if use_qwen else None
@@ -123,6 +140,8 @@ def main():
                     response_pub.publish(String(data=CANNOT_ANSWER))
             if decision.save_place:
                 save_place_pub.publish(String(data=decision.save_place))
+            if decision.gps_here:
+                gps_here_pub.publish(String(data=place_name(decision.gps_here)))
             if decision.stop:
                 announce('idle', stop=True, request_id=decision.request_id)
             elif decision.mode is not None:

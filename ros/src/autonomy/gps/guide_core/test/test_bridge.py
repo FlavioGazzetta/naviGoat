@@ -425,3 +425,66 @@ def test_blocker_none_and_spaces_mean_no_blocker():
     assert bridge.blocker == ''
     bridge.set_blocker('   ')
     assert bridge.blocker == ''
+
+
+# --- auto_go: no go button ---
+
+def auto_bridge():
+    """Return an auto_go bridge with one trip started (goal 1, the station)."""
+    bridge = Bridge(auto_go=True)
+    bridge.on_mode(GPS_STATION)
+    return bridge
+
+
+def test_auto_go_starts_without_confirmation():
+    bridge = Bridge(auto_go=True)
+    assert bridge.on_mode(GPS_STATION) == (
+        StartMission(1, 'south kensington station', skip_confirmation=True),)
+
+
+def test_auto_go_sends_go_once_when_waiting_at_a_crossing():
+    bridge = auto_bridge()
+    message = 'At crossing 1 of 2 (signalled). Press go when it is safe to cross.'
+    first = bridge.on_state(1, MissionState.WAITING_AT_CROSSING, message)
+    assert SendGo(1) in first
+    assert says(first) == ['At crossing 1 of 2 (signalled).']   # no "Press go ..."
+    assert SendGo(1) not in bridge.on_state(1, MissionState.WAITING_AT_CROSSING, message)
+    # the next crossing gets its own go
+    bridge.on_state(1, MissionState.NAVIGATING, 'Crossing now.')
+    assert SendGo(1) in bridge.on_state(1, MissionState.WAITING_AT_CROSSING, message)
+
+
+def test_auto_go_sends_go_when_the_route_waits_for_a_start():
+    # a place found online is read back and waits, even with skip_confirmation
+    bridge = auto_bridge()
+    commands = bridge.on_state(1, MissionState.READY,
+                               'Museum. About 200 m walk. Press go to start.')
+    assert SendGo(1) in commands
+    assert says(commands) == ['Museum. About 200 m walk.']
+
+
+def test_auto_go_refused_is_silent_and_sent_again():
+    bridge = auto_bridge()
+    bridge.on_state(1, MissionState.READY, 'Route. Press go to start.')
+    assert bridge.on_go_reply(1, False, "I'm not sure where we are yet. Please wait.") == ()
+    assert SendGo(1) in bridge.on_state(1, MissionState.READY, 'Route. Press go to start.')
+
+
+def test_auto_go_leaves_a_pause_alone():
+    bridge = auto_bridge()
+    commands = bridge.on_state(1, MissionState.PAUSED, 'Paused. Press go to continue.')
+    assert SendGo(1) not in commands
+
+
+def test_auto_go_stop_still_cancels():
+    bridge = auto_bridge()
+    assert CancelMission(1) in bridge.on_mode(STOP)
+    assert not bridge.active
+
+
+def test_without_auto_go_nothing_is_sent_or_cut():
+    bridge = started_bridge()
+    message = 'At crossing 1 of 2. Press go when it is safe to cross.'
+    commands = bridge.on_state(1, MissionState.WAITING_AT_CROSSING, message)
+    assert SendGo(1) not in commands
+    assert says(commands) == [message]

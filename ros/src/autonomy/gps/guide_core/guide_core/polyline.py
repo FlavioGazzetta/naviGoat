@@ -68,3 +68,45 @@ def simplify_polyline(points, tolerance, keep=()):
                 stack.append((s, worst_i))
                 stack.append((worst_i, e))
     return sorted(kept)
+
+
+def resample_polyline(points, spacing):
+    """Return points every `spacing` metres along the line, as (x, y, heading).
+
+    points: sequence of (x, y). spacing: metres between the returned points,
+    measured along the line; finite and > 0. The first and the last point are
+    always returned, so the last step can be shorter than spacing. heading is
+    the direction of travel at the point, in radians (0 = +x, counter-clockwise);
+    the last point keeps the heading of the stretch that arrives at it.
+    Repeated points are skipped. Fewer than two different points give [].
+
+    Raises ValueError for an invalid spacing.
+    """
+    spacing = float(spacing)
+    if not (math.isfinite(spacing) and spacing > 0.0):
+        raise ValueError(f'spacing must be finite and > 0, got {spacing!r}')
+    line = []
+    for x, y in points:
+        point = (float(x), float(y))
+        if not line or point != line[-1]:
+            line.append(point)
+    if len(line) < 2:
+        return []
+    out = []
+    target = 0.0    # distance along the line of the next point to return
+    walked = 0.0    # distance along the line of the start of this segment
+    heading = 0.0
+    for (ax, ay), (bx, by) in zip(line, line[1:]):
+        length = math.hypot(bx - ax, by - ay)
+        heading = math.atan2(by - ay, bx - ax)
+        while target <= walked + length:
+            t = (target - walked) / length
+            out.append((ax + t * (bx - ax), ay + t * (by - ay), heading))
+            target += spacing
+        walked += length
+    end_x, end_y = line[-1]
+    if math.hypot(out[-1][0] - end_x, out[-1][1] - end_y) > 1e-6:
+        out.append((end_x, end_y, heading))
+    else:
+        out[-1] = (end_x, end_y, heading)
+    return out

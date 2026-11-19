@@ -200,3 +200,13 @@ def test_config_rejects_non_positive(field):
         HealthConfig(**{field: 0.0})
     with pytest.raises(ValueError):
         HealthConfig(**{field: math.nan})
+
+
+def test_nav2_not_required_does_not_block():
+    health = evaluate(HealthInputs(
+        now=100.0, gps_message_time=99.5, gps_fix_time=99.5, status_time=99.5,
+        quality=Quality.GOOD, initialised=True, ever_localised=True, mission_ready=True,
+        planner_ready=True, nav2_ready=False, geocoder_ready=True, nav2_required=False))
+    assert health.ready
+    nav2 = next(p for p in health.parts if p.name == 'nav2')
+    assert not nav2.ok and nav2.detail == 'Nav2 is not running'

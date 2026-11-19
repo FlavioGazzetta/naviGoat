@@ -155,6 +155,9 @@ class MissionConfig:
         no match; False = fail with UNKNOWN_DESTINATION straight away. Off
         here; the mission manager node turns it on (its parameter
         online_lookup, default true).
+    pick_nearest: when several places match a name ("pret"), go to the one
+        nearest to the robot and say so, instead of failing with the list of
+        options. False = fail with AMBIGUOUS_DESTINATION (the user chooses).
     max_reroutes: new routes allowed after leaving the route before the
         mission fails ("I keep losing the route"); the count starts again after
         reroute_reset_distance metres of progress.
@@ -165,6 +168,7 @@ class MissionConfig:
     min_go_interval: float = 1.0
     snap_report_distance: float = 5.0
     online_lookup: bool = False
+    pick_nearest: bool = False
     max_reroutes: int = 3
     reroute_reset_distance: float = 100.0
 
@@ -277,6 +281,16 @@ def describe_crossing(info):
     """'signalled, major road, with an island'."""
     text = f'{info.kind}, {ROAD_WORDS.get(info.road, info.road)}'
     return text + (', with an island' if info.has_island else '')
+
+
+def nearest_destination(candidates):
+    """Return (the destination to go to, how many it was chosen from).
+
+    The only candidate, or of several the nearest by straight-line distance
+    (the first one if no distance is known).
+    """
+    best = min(candidates, key=lambda c: c.distance if c.distance is not None else math.inf)
+    return best.destination, len(candidates)
 
 
 def build_summary(name, note, plan, snap_report_distance, skip_confirmation=False,
@@ -442,9 +456,9 @@ class Mission:
                 self._phase = _Phase.LOOKING_UP
                 self._set_message(f"Searching OpenStreetMap for '{resolution.query}'.")
                 return (LookUpOnline(self._lookup_id, resolution.query),)
-            if resolution.outcome is Outcome.AMBIGUOUS:
+            if resolution.outcome is Outcome.AMBIGUOUS and not self._config.pick_nearest:
                 return self._fail(MissionError.AMBIGUOUS_DESTINATION, resolution.message)
-            target = resolution.candidates[0].destination
+            target, self._picked_from = nearest_destination(resolution.candidates)
         else:
             target = Destination('the requested point', goal.latitude, goal.longitude)
         return self._plan_to(target, robot_latlon, goal.skip_confirmation)
@@ -464,9 +478,9 @@ class Mission:
                                     config=self._match_config)
         if resolution.outcome is Outcome.NOT_FOUND:
             return self._fail(MissionError.UNKNOWN_DESTINATION, resolution.message)
-        if resolution.outcome is Outcome.AMBIGUOUS:
+        if resolution.outcome is Outcome.AMBIGUOUS and not self._config.pick_nearest:
             return self._fail(MissionError.AMBIGUOUS_DESTINATION, resolution.message)
-        target = resolution.candidates[0].destination
+        target, self._picked_from = nearest_destination(resolution.candidates)
         return self._plan_to(target, self._robot, self._skip_requested,
                              FOUND_IN_CACHE if from_cache else FOUND_ONLINE)
 
@@ -689,6 +703,7 @@ class Mission:
     def _reset_mission(self):
         self._dest_name = ''
         self._dest_note = ''
+        self._picked_from = 1         # how many matching places the destination was chosen from
         self._found_in = ''           # '' = curated / lat-lon; else where the result came from
         self._large_area = False
         self._query = ''              # name being looked up online
@@ -725,6 +740,9 @@ class Mission:
         self._target = target
         self._dest_name = target.name
         self._dest_note = '' if online else target.note
+        if self._picked_from > 1:   # read back, so the user knows a choice was made
+            chosen = f'the nearest of {self._picked_from} places with that name'
+            self._dest_note = f'{self._dest_note}, {chosen}' if self._dest_note else chosen
         self._found_in = found_in
         self._large_area = online and target.note == LARGE_AREA_NOTE
         self._skip_confirmation = skip_confirmation and not online
