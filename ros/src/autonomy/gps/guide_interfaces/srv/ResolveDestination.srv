@@ -1,0 +1,13 @@
+# Look up a destination by name without starting a mission, so the user can
+# hear and choose between candidates first. Served by mission_manager on
+# guide/resolve_destination.
+
+string query                  # what the user said, e.g. "the library"
+uint32 max_candidates         # 0 = default (5)
+---
+uint8 UNIQUE=0                # one clear match: safe to send a NavigateTo goal
+uint8 AMBIGUOUS=1             # several plausible matches: ask the user to choose
+uint8 NOT_FOUND=2             # nothing matched
+uint8 outcome
+DestinationCandidate[] candidates   # best first (empty if NOT_FOUND)
+string message                # sentence ready to be spoken

@@ -1,0 +1,9 @@
+# Give the route follower a new route to follow, replacing any current one.
+# Served by route_follower on guide/set_route; called by mission_manager.
+
+uint32 route_id               # chosen by the caller, > 0; echoed in RouteProgress
+nav_msgs/Path path            # route in the map frame, exactly as returned by PlanRoute
+RouteCrossing[] crossings     # crossings in route order, s measured along 'path'
+---
+bool success                  # false = route rejected, old route (if any) kept
+string message                # e.g. "Route 7: 649.3 m, 21 points, 6 crossings" or why it was rejected

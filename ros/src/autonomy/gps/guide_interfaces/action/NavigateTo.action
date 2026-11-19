@@ -1,0 +1,31 @@
+# Take the user to a destination: resolve it, plan a route from the robot's
+# current position, wait for the user's go, then follow the route to the end.
+# Served by mission_manager on guide/navigate_to.
+
+# ===== Goal =====
+uint8 TARGET_NAME=0          # look up 'destination' in the destination list (default)
+uint8 TARGET_LATLON=1        # go to 'latitude' / 'longitude' directly
+uint8 target_type
+string destination           # used when target_type == TARGET_NAME, e.g. "library"
+float64 latitude             # WGS84 degrees, used when target_type == TARGET_LATLON
+float64 longitude
+bool skip_confirmation       # false (default) = wait in READY for the user's go; true = for tests
+---
+# ===== Result =====
+uint16 NONE=0                    # arrived
+uint16 NO_POSITION=1             # no recent guide/pose to plan from
+uint16 UNKNOWN_DESTINATION=2     # name not found
+uint16 AMBIGUOUS_DESTINATION=3   # several possible places; message lists them
+uint16 PLANNING_FAILED=4         # planner or follower rejected the route
+uint16 NAVIGATION_FAILED=5       # Nav2 failed too many times in a row
+uint16 CANCELED=6                # the goal was cancelled
+uint16 BUSY=7                    # another mission is already running
+uint16 INVALID_GOAL=8            # empty name or lat/lon out of range
+uint16 error_code
+string message                   # sentence ready to be spoken
+float64 distance_remaining       # along the route (m); 0.0 if no route was followed
+float64 elapsed_time             # seconds from goal accepted to result
+---
+# ===== Feedback =====
+MissionState mission         # state, destination, read-back, warnings, latest event
+RouteProgress progress       # robot's progress along the route (zeros before NAVIGATING)

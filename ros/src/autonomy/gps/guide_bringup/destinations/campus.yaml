@@ -1,0 +1,76 @@
+# Curated destinations for the mission manager (guide_core.destinations).
+# lat/lon = the point to walk TO: the (preferably step-free) entrance, NOT the
+# building's centre. It must be within the planner's snap distance of a walkway.
+# Names and aliases are matched case-, accent- and punctuation-insensitively;
+# a leading "the" is ignored. An alias shared by two places makes the user choose.
+#
+# Demo entries only (both checked with plan_route in Step 7.1): the team
+# replaces/extends these with real entrances.
+destinations:
+  - name: South Kensington Station
+    aliases: [south ken, south ken station, tube station]
+    lat: 51.4941
+    lon: -0.1738
+    note: end of the pedestrian subway, step-free
+
+  - name: Demo start point
+    aliases: [start, demo start]
+    lat: 51.4986289
+    lon: -0.1752868
+    note: start of the demo route, on the pavement
+
+  - name: Electrical Engineering Building
+    aliases: [eee, eee building, triple e building, electrical engineering, electrical and electronic engineering building,
+              electrical and electronic engineering, department of electrical engineering]
+    lat: 51.4990213
+    lon: -0.1763852
+    note: Imperial College, its point in OpenStreetMap
+
+  # Every Pret in the map area. They share the alias "pret", so "GPS take me to pret" goes to
+  # the nearest one (pick_nearest in config/gps.yaml). The first is on the Imperial College
+  # campus and is not in OpenStreetMap under that name; the others are OpenStreetMap's points.
+  - name: Pret A Manger on campus
+    aliases: [pret, pret a manger, prets, campus pret]
+    lat: 51.4993018
+    lon: -0.1749979
+    note: on the Imperial College campus
+
+  - name: Pret A Manger, Old Brompton Road
+    aliases: [pret, pret a manger, prets]
+    lat: 51.4935566
+    lon: -0.1742233
+
+  - name: Pret A Manger, 132 Brompton Road
+    aliases: [pret, pret a manger, prets]
+    lat: 51.4987526
+    lon: -0.1657206
+
+  - name: Pret A Manger, Gloucester Road
+    aliases: [pret, pret a manger, prets]
+    lat: 51.4940078
+    lon: -0.1821099
+
+  - name: Pret A Manger, 106 Brompton Road
+    aliases: [pret, pret a manger, prets]
+    lat: 51.4993392
+    lon: -0.1645897
+
+  - name: Pret A Manger, Kensington High Street
+    aliases: [pret, pret a manger, prets]
+    lat: 51.5006677
+    lon: -0.1925093
+
+  - name: Pret A Manger, Queensway
+    aliases: [pret, pret a manger, prets]
+    lat: 51.5106612
+    lon: -0.1872707
+
+  - name: Pret A Manger, Earl's Court Road
+    aliases: [pret, pret a manger, prets]
+    lat: 51.4920915
+    lon: -0.1930854
+
+  - name: Pret A Manger, King's Road
+    aliases: [pret, pret a manger, prets]
+    lat: 51.4903042
+    lon: -0.1619845

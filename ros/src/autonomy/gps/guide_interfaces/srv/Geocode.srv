@@ -1,0 +1,22 @@
+# Look a destination name up online (Nominatim) or in the on-disk cache of
+# earlier answers. Served by the geocoder node; called by the mission manager
+# only when the curated destination list has no match.
+# Results (c) OpenStreetMap contributors, ODbL (see attribution).
+
+string query                 # what the user asked for, e.g. "science museum"
+float64 latitude             # with radius > 0: search around this point first, and the whole
+float64 longitude            #   graph area only if nothing is found there
+float64 radius               # metres; 0 = search the whole graph area straight away
+---
+uint8 OK=0                   # places found (online now or from the cache)
+uint8 NO_RESULTS=1           # searched (now or earlier): nothing in the graph area
+uint8 DISABLED=2             # online search switched off and nothing cached
+uint8 OFFLINE=3              # network error, timeout or server error; nothing cached
+uint8 RATE_LIMITED=4         # hourly cap or server refusal; nothing cached
+uint8 ERROR=5                # query too short or unreadable answer; nothing cached
+uint8 status
+bool from_cache              # candidates come from the cache, not a request now
+bool stale                   # from the cache and older than its maximum age
+DestinationCandidate[] candidates   # source 'nominatim'; note 'large area' if it is one
+string message               # what happened, for logs (not for speech)
+string attribution           # credit to show/say when using the results

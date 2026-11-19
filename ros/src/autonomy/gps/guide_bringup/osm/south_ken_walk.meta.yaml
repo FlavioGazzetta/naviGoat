@@ -1,0 +1,15 @@
+origin_lat: 51.4988
+origin_lon: -0.1749
+dist_m: 1500.0
+network_type: walk
+simplify: false
+downloaded_utc: '2026-11-12T19:26:57+00:00'
+osmnx_version: 2.1.1
+nodes: 13469
+directed_edges: 29630
+crossing_nodes_by_road_crossed:
+  major: 319
+  minor: 535
+  none: 52
+road_junctions: 1442
+attribution: (c) OpenStreetMap contributors, ODbL

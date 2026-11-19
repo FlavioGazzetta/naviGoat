@@ -80,3 +80,7 @@ Useful arguments:
 Only one of these at a time: two launches start two base drivers on the same serial port, and neither works.
 
 ## [Simulation](ros/src/simulation/README.md)
+
+## [GPS navigation](ros/src/autonomy/gps/README.md)
+
+Long walks outdoors: "GPS take me to ..." plans a route on OpenStreetMap and feeds Nav2 goals along it, stopping at every road crossing until the user's go. Build the image with `--build-arg GPS=true`.

@@ -22,6 +22,7 @@ All are `std_msgs/String`. Every name is a ROS parameter (the first column), so 
 | `status_topic` | `/object_status` | in | perception's search result, `found:<object>` or `not_found:<object>`. A failed search is spoken and the mode goes back to idle |
 | `description_topic` | `/scene_description` | in | perception's description of the view. It is passed on to the response topic |
 | `done_topic` | `/middleman/done` | in | the robot reached the goal of a location, object or GPS request |
+| `failed_topic` | `/middleman/failed` | in | the robot gave up on a location, object or GPS request. The text is the reason, ready to be spoken: it is said and the mode goes back to idle (a failed object can fall back to a stored place instead, as for a failed search). A report that comes when no goal mode is active is ignored. The GPS layer sends it; places_node does not yet |
 | `middleman_mode_topic` | `/middleman/mode` | out | JSON `{"mode", "target", "intent", "stop", "request_id"}` for the mode being started (follow, location, object, gps, manual, help, idle) |
 | `following_status_topic` | `/person_following/status` | in | JSON `{"request_id", "state", "event", "target_id"}` from following; matching terminal failures return the mode to idle and are spoken |
 | `save_place_topic` | `/navigation/save_place` | out | the name from "remember this place as the study". Navigation's places_node saves the robot's position under it, and "take me to the study" works afterwards |
@@ -115,5 +116,7 @@ Not tested:
   `/person_following/status`. It has an offline goal demo and a ROS runner
   (preview by default; Nav2 actions require `--execute-nav2`). Other modes'
   arrival reporting uses `/middleman/done`.
+- Navigation's places_node and the [GPS layer](../autonomy/gps/README.md) also read `/middleman/mode` and publish
+  `/middleman/done`; the GPS layer also sends `/middleman/failed` (tested with its simulator).
 - `found:<object>` is not spoken, and the object's position (`/object_mapping`) goes nowhere.
 - The object and place lists in `catalog.py` are a copy of the ones in `autonomy/perception/object_detection.py` (88 words and 84 aliases). They have to be kept equal by hand until one imports the other.

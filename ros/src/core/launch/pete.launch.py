@@ -26,6 +26,22 @@ def generate_launch_description():
         cmd=['python3', '-B', '-u', follow_script, '--input-timeout', arg('follow_input_timeout'), *options], output='screen',
         condition=IfCondition(PythonExpression(is_true('follow') + [' and '] + (is_true('follow_drive') if drive else ['not ('] + is_true('follow_drive') + [')']))))
 
+    # The GPS layer (autonomy/gps, "GPS take me to ..."): its own launch file, guide.launch.py, run from the built
+    # workspace. It needs the image built with GPS=true and, once, in /workspace:
+    #     colcon build --symlink-install --base-paths ros/src/autonomy/gps --packages-skip guide_sim
+    # If either is missing it says so and stays off; the rest of Pete starts as usual. On the robot it also needs RTAB-Map,
+    # Nav2 and a GPS driver on /gps/fix, and refuses trips until they are there (see /gps/health).
+    workspace = os.path.normpath(os.path.join(src, '..', '..'))
+    gps_start = (
+        'cd "$0" || exit 0; '
+        'if ! python3 -c "import osmnx, geopandas" 2>/dev/null; then '
+        'echo "[gps] GPS is off: this image has no GPS packages. Rebuild it with --build-arg GPS=true."; exit 0; fi; '
+        'if [ ! -f install/guide_bringup/share/guide_bringup/package.xml ]; then '
+        'echo "[gps] GPS is off: the GPS packages are not built. Run once in /workspace: '
+        'colcon build --symlink-install --base-paths ros/src/autonomy/gps --packages-skip guide_sim"; exit 0; fi; '
+        'source install/setup.bash 2>/dev/null; exec ros2 launch guide_bringup guide.launch.py "sim:=$1"')
+    gps = ExecuteProcess(cmd=['bash', '-c', gps_start, workspace, arg('gps_sim')], output='screen', condition=IfCondition(arg('gps')))
+
     return LaunchDescription([
         DeclareLaunchArgument('camera', default_value='true'),  # false when the Orbbec ROS 2 driver runs the camera
         DeclareLaunchArgument('search_time', default_value='5.0'),
@@ -40,6 +56,8 @@ def generate_launch_description():
         DeclareLaunchArgument('people_max_age', default_value='1.0'),  # seconds to retain an unobserved track; following uses 2.0
         DeclareLaunchArgument('follow', default_value=arg('people')),  # person following starts with the tracker; follow:=false leaves it out
         DeclareLaunchArgument('follow_drive', default_value='false'),  # true: send the goals to Nav2 (the robot moves)
+        DeclareLaunchArgument('gps', default_value='false'),  # true also starts the GPS layer ("GPS take me to ...")
+        DeclareLaunchArgument('gps_sim', default_value='false'),  # true: with its simulated robot, GPS and Nav2 (needs guide_sim built)
         # How old (seconds since the camera took the picture) a tracking result may be before following gives up. The
         # node's own 0.5 is too tight on the Jetson: results are normally 0.2-0.3 s old and now and then over 0.5 s
         # (measured 0.51 and 0.64 s), which ended following about a second after it started.
@@ -61,4 +79,5 @@ def generate_launch_description():
         people('social_tracking_dashboard.py', '--host', '0.0.0.0', '--port', arg('people_port')),
         following(False, '--global-frame', 'camera_link', '--base-frame', 'camera_link'),
         following(True, '--execute-nav2'),
+        gps,
     ])

@@ -73,6 +73,7 @@ class Decision:
     stop: bool = False  # True for a stop request, mode is IDLE
     reply: str = ''  # what Pete says out loud
     forward: str = ''  # the full text for perception (what the camera sees); mode is None
+    gps_here: str = ''  # "GPS, I'm at the library": the place the user says they are at, for the GPS layer; mode is None
     save_place: str = ''  # "remember this place as the study": the name for navigation to save the robot's position under; mode is None
     request_id: str = field(default='', compare=False)  # correlate commands and following feedback
 
@@ -90,6 +91,9 @@ _EXIT = re.compile(r"\b(exit|leave|quit|end|disable|turn off|get out of)\b.*\b(m
 _MANUAL = re.compile(r"\bmanual\b|\b(joystick|joy stick|stick) (mode|control)\b|\blet me (drive|steer|control)\b|\bi('ll| will) (drive|steer)\b")
 _GPS = re.compile(r"\bgps\b")
 _GPS_TARGET = re.compile(r"\bgps\b.*?\b(to|towards)\b(?P<target>.*)")
+# "GPS, I'm at the library": where the user is now, for the GPS layer to start its routes from when it has no fix
+_GPS_HERE = re.compile(r"\bgps\b.*?\b(?:(?:i'm|im|i am|we're|we are) (?:now |currently |standing |right now )*(?:at|in|inside|outside|near|next to|by)"
+                       r"|(?:my|our) (?:location|position) is(?: at| in)?|start(?:ing)? from)\b(?P<target>.*)")
 # Pete follows another person; the user follows Pete. Users are not expected to say "follow me".
 _FOLLOW = re.compile(r"\bfollow(ing)?\b")
 _FOLLOW_NAME = re.compile(r"\bfollow(ing)? (?!(me|him|her|them|us|that|this|the|a|my|it|follow|following|please|now|again|too)\b)(?P<target>[a-z]+)")
@@ -231,7 +235,25 @@ def resolve(target, text, locations, saved, hint=None, match='', confidence=0.0)
     return Decision(None, text=text, reply=say_unknown(target))
 
 
+# "the natural history museum in south kensington": the map search wants the name alone, and only covers that area anyway
+_AREA = re.compile(r"\s+((in|at|near|of)\s+)?(the\s+)?(south kensington|kensington|london|imperial college london|imperial college|imperial)$")
+
+
+_NEAREST = re.compile(r"^(the\s+)?(nearest|closest|nearby|a|an|any|some)\s+")
+
+
+def strip_area(place):
+    """A place name without the area said after it, or "nearest" before it: 'abdus salam library in imperial college' ->
+    'abdus salam library', 'nearest pret' -> 'pret'. The GPS layer picks the nearest of several anyway."""
+    while (shorter := _AREA.sub('', place)) != place and shorter:
+        place = shorter
+    while (shorter := _NEAREST.sub('', place)) != place and shorter:
+        place = shorter
+    return place
+
+
 def gps_decision(target, text):
+    target = strip_area(target)
     if not target:
         return Decision(None, text=text, reply='GPS to where?')
     return Decision(Mode.GPS, 'goto', target, text, reply=f'GPS to {target}.')
@@ -380,6 +402,11 @@ def classify_by_rules(text, locations=LOCATIONS, require_wake_word=False, saved=
     if _FIND.search(text) and not (_GUIDE.search(text) or _NEED_PLACE.search(text) or _GPS.search(text)):
         match = _FIND_TARGET.search(text)
         return resolve(clean_target(match.group('target')) if match else '', text, locations, saved)  # "where is the cup" = "take me to the cup"
+    if match := _GPS_HERE.search(text):
+        place = strip_area(clean_target(match.group('target')))
+        if not place:
+            return Decision(None, text=text, reply="Where are you? Say: GPS, I'm at, and the place.")
+        return Decision(None, text=text, gps_here=place, reply=f'Looking up {place}.')
     if _GPS.search(text):
         match = _GPS_TARGET.search(text)
         return gps_decision(clean_target(match.group('target')) if match else '', text)

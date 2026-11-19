@@ -1,0 +1,9 @@
+# Test route for the route follower (Step 4): an L shape.
+# Waypoints are [x, y] in metres in the map frame (x = east, y = north),
+# relative to the localizer origin. The sim robot starts at (0, 0) facing east.
+# Expected: goals every 5 m, held at the corner (40, 0), arrival near (40, 30).
+frame_id: map
+waypoints:
+  - [0.0, 0.0]     # start
+  - [40.0, 0.0]    # corner: 90 degree left turn
+  - [40.0, 30.0]   # destination

@@ -1,0 +1,14 @@
+# GPS conditions for the Step 8 noisy runs. Used only by the simulator (sim_robot's
+# gps_zones_file parameter); the real robot never reads this file.
+# Profiles: perfect, open, urban_canyon, no_fix (see guide_core/gps_error.py).
+# Any field of GpsConditions can be overridden, e.g. {profile: urban_canyon, jitter_sigma: 2.0}.
+
+# Everywhere not covered by a zone below.
+default: {profile: urban_canyon}
+
+# Every tunnel=yes edge of the routing graph has no fix (needs sim_robot's graph_file).
+tunnels_from_graph: true
+tunnel_half_width: 5.0
+
+# Extra zones: points are [lat, lon]; one point = a circle of radius half_width (m).
+zones: []

@@ -1,0 +1,20 @@
+# Plan a walking route between two GPS points on the cached OpenStreetMap graph.
+# Served by route_planner on guide/plan_route.
+
+# Request: WGS84 degrees
+float64 start_latitude
+float64 start_longitude
+float64 goal_latitude
+float64 goal_longitude
+---
+# Response
+bool success                 # false = no route; message says why
+string message               # human-readable summary or reason for failure
+string[] warnings            # each warning on its own (also appended to message as " WARNING: ...")
+nav_msgs/Path path           # simplified route in the map frame (metres)
+float64[] latitudes          # lat of each path point (same order as path.poses)
+float64[] longitudes         # lon of each path point
+float64 length               # route length (m)
+float64 start_snap_distance  # distance (m) from requested start to the walkway graph
+float64 goal_snap_distance   # distance (m) from requested goal to the walkway graph
+RouteCrossing[] crossings    # road crossings in route order

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>guide_nodes</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="antoni@todo.todo">antoni</maintainer>
+  <license>TODO: License declaration</license>
+
+  <!-- Packages our nodes import at runtime: the ROS Python library, message types, and our own packages. -->
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>guide_core</depend>
+  <depend>guide_interfaces</depend>
+  <depend>action_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>rcl_interfaces</depend>
+
+  <exec_depend>python3-yaml</exec_depend>
+    <!-- osmnx (route_planner, fetch_osm_graph) has no rosdep key: install it with pip,
+       pinned to the apt versions in apt_pins.txt (exact command in the README). -->
+  <exec_depend>tf2_ros</exec_depend>
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
