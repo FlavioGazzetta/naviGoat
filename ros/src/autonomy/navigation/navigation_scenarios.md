@@ -99,7 +99,7 @@ Terminal 1, **one** of these (one launch at a time):
 - RViz opens with the real robot's config (`robot.rviz` is now the default of `navigation_sim.launch.py`). Another
   config: add `rviz_config:=/path/to/file.rviz`.
 - Wait until RViz shows the map and the robot, and the launch output prints `Managed nodes are active`.
-- The launch output prints `People ready: N standing and M walking fake people`. Check it says 0/0, 5/0 or 0/3.
+- The launch output prints `People ready: N standing and M walking fake people`. Check it says 0/0, 4/0 or 0/3.
 - Walkers start walking when the launch starts, so where they are on each leg depends on timing.
 
 Terminal 2, watch what navigation does (leave it open for the whole run):
@@ -115,11 +115,14 @@ If it doesn't, or the robot in RViz isn't on the map, use RViz's **2D Pose Estim
 
 ### Clean slate before recording (optional)
 
-The places are kept in `ros/src/simulation/maps/indoor_places.yaml` between runs, so the previous run's arrows are still in RViz. To
-start each recording without them:
+The places are kept in `ros/src/simulation/maps/indoor_places.yaml` between runs, so older places (the previous run's,
+or ones like `kitchen` saved before) are still in RViz. To start each recording without any, forget every saved place:
 ```bash
-for p in start desk door; do ros2 topic pub --once /navigation/forget_place std_msgs/msg/String "{data: $p}"; done
+for p in $(ros2 topic echo /navigation/places std_msgs/msg/String --once --qos-durability transient_local --qos-reliability reliable --no-daemon --field data | head -1 | tr -d "[]\"',"); do ros2 topic pub --once /navigation/forget_place std_msgs/msg/String "{data: $p}"; done
 ```
+It prints `forgot:<name>` in the status terminal for each one. Names with a space in them (`living room`) have to be
+forgotten by hand: `ros2 topic pub --once /navigation/forget_place std_msgs/msg/String "{data: living room}"`.
+Or, with the simulation stopped: `rm ros/src/simulation/maps/indoor_places.yaml`.
 
 ## 3. The route (the same commands in all three scenarios)
 
@@ -181,7 +184,7 @@ ros2 topic pub --once /navigation/goto std_msgs/msg/String "{data: start}"
 
 ```bash
 ros2 topic pub --once /navigation/cancel std_msgs/msg/String "{data: ''}"                       # stop driving
-ros2 topic echo /navigation/places --once --qos-durability transient_local --no-daemon        # saved places
+ros2 topic echo /navigation/places std_msgs/msg/String --once --qos-durability transient_local --qos-reliability reliable --no-daemon   # saved places
 ros2 topic echo /handle/vibration --no-daemon --field data      # what the handle would get: next turn
 ros2 topic echo /wristband/vibration --no-daemon --field data   # what the wristband would get: closest person
 ```
@@ -191,8 +194,8 @@ RViz **Publish Point**: click on the map to add a standing person, click on them
 
 | Step | 1. No one | 2. People static | 3. People moving |
 | --- | --- | --- | --- |
-| 2: start → desk | straight diagonal | goes around pair A (1.6 m apart, across the diagonal) | gives way to W1 crossing at x = 1.75 |
-| 3: desk → door | straight diagonal | around pair A again, then about 1 m clear of B at (-1.75, 1.5) | W1, then W2 (crossing at y = 1.5) |
+| 2: start → desk | straight diagonal | goes around A at (1.2, -2.1) | gives way to W1 crossing at x = 1.75 |
+| 3: desk → door | straight diagonal | around A again, then about 1 m clear of B at (-1.75, 1.5) | W1, then W2 (crossing at y = 1.5) |
 | 4: door → desk | straight diagonal | same as step 3, reversed | depends on where W1 and W2 are |
 | 5: desk → chair | straight along y ≈ -3.3 | around pair C (2.0 m apart): the gap is wide enough, but the group rule keeps it out | meets W3 walking along y = -2.2 |
 | 6: chair → start | straight | passes pair C | crosses W3's line |
@@ -200,17 +203,44 @@ RViz **Publish Point**: click on the map to add a standing person, click on them
 The robot should pass behind walkers rather than cut in front (the social layer adds cost where each walker will be in
 the next 2 s). The wristband only gets a value when someone is within 1.2 m, so expect weak or no values in the open.
 
-**Group rule on and off (scenario 2, optional).** After step 5, turn the rule off, then drive the same leg again:
+**Group rule on and off (scenario 2, optional).** After step 5, turn the group rule off (section 5), then drive the same
+leg again:
 ```bash
-ros2 param set /global_costmap/global_costmap social_layer.group_cost 0
-ros2 param set /local_costmap/local_costmap social_layer.group_cost 0
 ros2 topic pub --once /navigation/goto std_msgs/msg/String "{data: desk}"
 ros2 topic pub --once /middleman/mode std_msgs/msg/String "{data: '{\"mode\": \"object\", \"target\": \"chair\", \"stop\": false}'}"
 ros2 topic pub --once /object_mapping geometry_msgs/msg/PointStamped "{header: {frame_id: map}, point: {x: -3.5, y: -3.5}}"
 ```
-Now it goes through the gap between the two people. `group_cost 220` turns it back on.
+Now it goes through the gap between the two people of pair C.
 
-## 5. Recording the data too (optional)
+## 5. Group rule on and off
+
+The group rule keeps the robot from passing between two people who are together (closer than 2.2 m), even when the gap
+is wide enough. It is the social layer's `group_cost` (see [TOPICS.md](TOPICS.md)): 0 is off, 220 (the default) is on.
+It works while the simulation runs, from the next costmap update, and has to go to both costmaps.
+
+**Off:**
+```bash
+ros2 param set /global_costmap/global_costmap social_layer.group_cost 0
+ros2 param set /local_costmap/local_costmap social_layer.group_cost 0
+```
+
+**On:**
+```bash
+ros2 param set /global_costmap/global_costmap social_layer.group_cost 220
+ros2 param set /local_costmap/local_costmap social_layer.group_cost 220
+```
+
+Check what is set now:
+```bash
+ros2 param get /global_costmap/global_costmap social_layer.group_cost
+ros2 param get /local_costmap/local_costmap social_layer.group_cost
+```
+
+With it off, personal space and the walker prediction stay on. It shows best with pair C in scenario 2 (2.0 m apart,
+across the desk -> chair leg): on, the robot goes around them; off, it goes through the gap. A relaunch always starts with
+the rule on.
+
+## 6. Recording the data too (optional)
 
 Besides the screen recording, a bag of the run (terminal 4, start it before step 1, Ctrl+C after step 6):
 ```bash
@@ -222,7 +252,7 @@ ros2 bag record -o bags/sim_static_$(date +%H%M) /clock /tf /tf_static /odom /ma
 Change `sim_static` to `sim_none` / `sim_moving`. Replay it with `ros2 bag play <folder> --clock` and RViz with
 `rviz2 -d ros/src/autonomy/navigation/config/robot.rviz --ros-args -p use_sim_time:=true`.
 
-## 6. Between scenarios
+## 7. Between scenarios
 
 One Ctrl+C in terminal 1, wait 10–15 s until everything has stopped, then launch the next scenario. Gazebo restarts,
 so the robot is back at (0, 0). The saved places stay in `ros/src/simulation/maps/indoor_places.yaml`, and saving the same name again
