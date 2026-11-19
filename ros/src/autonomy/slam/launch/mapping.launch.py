@@ -86,7 +86,7 @@ def generate_launch_description():
         ),
         ExecuteProcess( # filtering out dynamic objects from the point cloud such as moving people
             cmd=[
-                'dynamic-object-removal-realtime',
+                'python3', os.path.join(slam_dir, 'dynamic_object_filter.py'),
                 '--pointcloud-topic', '/unilidar/cloud/deskewed',
                 '--output-topic', '/unilidar/cloud_static',
                 '--algorithm', 'range',
