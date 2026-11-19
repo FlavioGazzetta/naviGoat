@@ -15,7 +15,10 @@ def generate_launch_description():
     robot_xacro = os.path.normpath(os.path.join(slam_dir, '..', '..', 'bringup', 'description', 'pioneer3at_lidar.xacro'))
     camera_launch = os.path.normpath(os.path.join(slam_dir, '..', '..', 'hardware', 'camera', 'launch', 'camera.launch.py'))
     subscribe_scan_cloud = LaunchConfiguration('subscribe_scan_cloud')
+    use_rgbd = LaunchConfiguration('use_rgbd')
     use_lidar_scan = ["'", subscribe_scan_cloud, "'.lower() in ('true', '1')"]
+    use_femto_imu = ["'", use_rgbd, "'.lower() in ('true', '1') and not (", *use_lidar_scan, ")"]
+    femto_imu_topic = '/camera/imu/data'
     robot_description = ParameterValue(Command([FindExecutable(name='xacro'), ' ', robot_xacro,
                                                 ' lidar_x:=', LaunchConfiguration('lidar_x'), ' lidar_y:=', LaunchConfiguration('lidar_y'), ' lidar_z:=', LaunchConfiguration('lidar_z'),
                                                 ' lidar_roll:=', LaunchConfiguration('lidar_roll'), ' lidar_pitch:=', LaunchConfiguration('lidar_pitch'), ' lidar_yaw:=', LaunchConfiguration('lidar_yaw')]), value_type=str)
@@ -65,6 +68,15 @@ def generate_launch_description():
         ),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(camera_launch), condition=IfCondition(LaunchConfiguration('start_camera'))),
         Node(
+            package='imu_filter_madgwick',
+            executable='imu_filter_madgwick_node',
+            name='femto_imu_filter',
+            parameters=[{'use_mag': False, 'publish_tf': False}],
+            remappings=[('imu/data_raw', '/camera/gyro_accel/sample'), ('imu/data', femto_imu_topic)],
+            condition=IfCondition(PythonExpression(use_femto_imu)),
+            output='screen',
+        ),
+        Node(
             package='tf2_ros',
             executable='static_transform_publisher',
             name='lidar_imu_mount',
@@ -103,8 +115,8 @@ def generate_launch_description():
                 'config_file': os.path.join(slam_dir, 'config', 'rtabmap_hardware.yaml'),
                 'odom_frame_id': LaunchConfiguration('odom_frame_id'),
                 'scan_cloud_topic': PythonExpression(["'/unilidar/cloud_static' if '", LaunchConfiguration('filter'), "' == 'object' else '/unilidar/cloud/deskewed' if '", LaunchConfiguration('filter'), "' == 'deskew' else '/unilidar/cloud'"]),
-                'imu_topic': PythonExpression(["'/unilidar/imu' if "] + use_lidar_scan + [" else ''"]),
-                'use_rgbd': LaunchConfiguration('use_rgbd'),
+                'imu_topic': PythonExpression(["'/unilidar/imu' if ", *use_lidar_scan, f" else '{femto_imu_topic}' if ", *use_femto_imu, " else ''"]),
+                'use_rgbd': use_rgbd,
                 'subscribe_scan_cloud': subscribe_scan_cloud,
             }.items(),
         ),

@@ -27,9 +27,10 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, GroupAction, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import IfElseSubstitution, LaunchConfiguration, OrSubstitution, PathJoinSubstitution
 from launch_ros.actions import SetParameter
 from launch_ros.substitutions import FindPackageShare
+from nav2_common.launch import RewrittenYaml
 
 LAUNCH_DIR = os.path.dirname(os.path.realpath(__file__))  # navigation_nodes/launch
 SRC_DIR = os.path.abspath(os.path.join(LAUNCH_DIR, '..', '..', '..', '..'))  # ros/src
@@ -47,15 +48,10 @@ PEOPLE_DIR = os.path.join(PERCEPTION_DIR, 'social_perception', 'femto_id_velocit
 
 
 def social_nav():
-    """Only what social nav needs, with social:=true: the camera, the YOLO server and Enid's people tracker, which
-    publishes /social_perception/tracks for people_node. The same three pete.launch.py people:=true starts, without
-    Qwen, scene description, object detection or the middleman. Needs the PETE=true image, the GPU and the camera."""
+    """Starts the YOLO server and Enid's people tracker with social:=true. The tracker publishes
+    /social_perception/tracks for people_node. Needs the PETE=true image, the GPU and the camera."""
     social = IfCondition(LaunchConfiguration('social'))
     return [
-        # its own `ros2 launch`: camera.launch.py shuts down everything around it if the camera stops, and that should
-        # stop the camera side only, not mapping and Nav2
-        ExecuteProcess(cmd=['ros2', 'launch', os.path.join(SRC_DIR, 'hardware', 'camera', 'launch', 'camera.launch.py')],
-                       output='screen', condition=social),
         # YOLO, loaded once, asked over HTTP by the tracker (http://127.0.0.1:8767)
         ExecuteProcess(cmd=['python3', '-u', os.path.join(PERCEPTION_DIR, 'yolo_server.py')], output='screen', condition=social),
         # the tracker, with the same options as in pete.launch.py. Its own Python (the image's SOCIAL=true layer), run from
@@ -77,7 +73,22 @@ def launch_navigation_nodes(context):
     )]
 
 
+def require_navigation_sensor(context):
+    raise RuntimeError('Enable use_lidar:=true or use_depth_camera:=true for navigation')
+
+
 def generate_launch_description():
+    use_lidar = LaunchConfiguration('use_lidar')
+    use_depth_camera = LaunchConfiguration('use_depth_camera')
+    depth_sources = 'depth_camera depth_camera_clearing'
+    depth_nav2_params = RewrittenYaml(
+        source_file=NAV2_PARAMS,
+        param_rewrites={
+            'local_costmap.local_costmap.ros__parameters.voxel_layer.observation_sources': IfElseSubstitution(
+                use_lidar, if_value=f'lidar lidar_clearing {depth_sources}', else_value=depth_sources),
+        },
+    )
+
     return LaunchDescription([
         DeclareLaunchArgument('database_path', description='RTAB-Map database: a new file to make a map, an existing one to continue or navigate on it'),
         DeclareLaunchArgument('mode', default_value='mapping', choices=['mapping', 'localisation']),
@@ -94,6 +105,20 @@ def generate_launch_description():
         DeclareLaunchArgument('social', default_value='false', choices=['true', 'false'],
                               description='true: social nav with real people (camera, YOLO server, people tracker). Not '
                                           'together with pete.launch.py people:=true, which starts the same ones'),
+        DeclareLaunchArgument('use_lidar', default_value='true', choices=['true', 'false'],
+                              description='use lidar scans for SLAM and local costmap obstacles'),
+        DeclareLaunchArgument('use_depth_camera', default_value='false', choices=['true', 'false'],
+                              description='use Femto RGB-D input for SLAM and local costmap obstacles'),
+        DeclareLaunchArgument('start_femto', default_value=OrSubstitution(use_depth_camera, LaunchConfiguration('social')),
+                              choices=['true', 'false'], description='start Femto driver for depth or social navigation'),
+        OpaqueFunction(function=require_navigation_sensor, condition=UnlessCondition(OrSubstitution(use_lidar, use_depth_camera))),
+
+        # share one camera between rgb-d slam, nav2 and social perception
+        ExecuteProcess(
+            cmd=['ros2', 'launch', os.path.join(SRC_DIR, 'hardware', 'camera', 'launch', 'camera.launch.py'),
+                 ['enable_point_cloud:=', use_depth_camera]],
+            output='screen', condition=IfCondition(LaunchConfiguration('start_femto')),
+        ),
 
         # the base, with the motors turned on once it's connected
         IncludeLaunchDescription(
@@ -111,6 +136,8 @@ def generate_launch_description():
                 'database_path': LaunchConfiguration('database_path'),
                 'mode': LaunchConfiguration('mode'),
                 'odom_frame_id': 'odom',
+                'use_rgbd': use_depth_camera,
+                'subscribe_scan_cloud': use_lidar,
                 'lidar_port': LaunchConfiguration('lidar_port'),
                 'filter': LaunchConfiguration('filter'),
                 'rviz': LaunchConfiguration('rviz'),
@@ -130,7 +157,8 @@ def generate_launch_description():
                 SetParameter(name='bond_timeout', value=0.0),
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('nav2_bringup'), 'launch', 'navigation_launch.py'])),
-                    launch_arguments={'params_file': NAV2_PARAMS, 'use_sim_time': 'false', 'use_composition': 'False'}.items(),
+                    launch_arguments={'params_file': IfElseSubstitution(use_depth_camera, if_value=depth_nav2_params, else_value=NAV2_PARAMS),
+                                      'use_sim_time': 'false', 'use_composition': 'False'}.items(),
                 ),
             ],
         ),

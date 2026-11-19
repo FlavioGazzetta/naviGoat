@@ -3,6 +3,7 @@ camera setup: the Orbbec ROS 2 driver, then depth registration (depth aligned to
 
     driver:=orbbec   (default) the Orbbec driver + depth_image_proc; needs the SOCIAL=true image
     driver:=sdk      the old camera.py, which reads the camera through the Orbbec SDK (PETE=true image)
+    enable_point_cloud:=true publishes /camera/depth/points with the Orbbec driver
 
 Either way the topics are /camera/color/image_raw, /camera/color/camera_info and /camera/depth_registered/image_rect.
 Only one program can open the camera: do not run this together with jetson_pipeline.sh.
@@ -23,7 +24,8 @@ def generate_launch_description():
     is_driver = lambda name: IfCondition(PythonExpression(["'", LaunchConfiguration('driver'), "' == '", name, "'"]))
 
     orbbec = ExecuteProcess(
-        cmd=['ros2', 'launch', 'orbbec_camera', 'femto_bolt.launch.py', 'depth_registration:=false'],
+        cmd=['ros2', 'launch', 'orbbec_camera', 'femto_bolt.launch.py', 'depth_registration:=false',
+             ['enable_point_cloud:=', LaunchConfiguration('enable_point_cloud')]],
         output='screen', condition=is_driver('orbbec'))
     # ROS 2 finds publishers and subscribers as they appear, so this can start before the first camera frames arrive
     registration = ExecuteProcess(
@@ -42,6 +44,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('driver', default_value='orbbec'),
+        DeclareLaunchArgument('enable_point_cloud', default_value='false', choices=['true', 'false']),
         LogInfo(msg='[camera] Starting Orbbec Femto Bolt driver...', condition=is_driver('orbbec')),
         orbbec,
         LogInfo(msg='[camera] Starting external depth registration...', condition=is_driver('orbbec')),

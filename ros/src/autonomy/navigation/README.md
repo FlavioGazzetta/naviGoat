@@ -54,6 +54,8 @@ Then **one** of these (only one launch at a time):
 | **Map + drive with Nav2 goals** | `ros2 launch $NAV database_path:=$MAP` |
 | **Map + drive with the keyboard** (no Nav2) | `ros2 launch $NAV database_path:=$MAP teleop:=true` |
 | **Navigate on a finished map** | `ros2 launch $NAV database_path:=$MAP mode:=localisation` |
+| **Use lidar and the Femto together** | add `use_depth_camera:=true` |
+| **Use the Femto with lidar off** | add `use_depth_camera:=true use_lidar:=false` |
 | **Any of the above with social nav** (camera + people) | add `social:=true` |
 | **A clean map** (moving people left out of it) | add `filter:=object` |
 
@@ -64,6 +66,8 @@ Then **one** of these (only one launch at a time):
 - **Map with the keyboard, then navigate**: run with `teleop:=true`, drive around, Ctrl+C (saves the map), then launch
   again with `mode:=localisation`.
 - **In localisation**, the robot must start where the map was started, or get its pose from RViz's **2D Pose Estimate**.
+- **Sensor defaults** are `use_lidar:=true use_depth_camera:=false`. At least one navigation sensor must be enabled.
+- **Femto navigation** adds RGB-D input to SLAM and uses the front-facing `/camera/depth/points` cloud for local obstacles. Start with a fresh database for RGB-D mapping and use that database in localisation. If the camera already runs with `enable_point_cloud:=true` and publishes registered depth and IMU, add `start_femto:=false`.
 - **Everything incl. handle and wristband**: `ros2 launch bringup launch.py database_path:=$MAP` (same flags).
 
 Other flags: `filter:=deskew|object|none` (default `deskew`), `enable_motors:=false`, `rviz:=true` (RViz on the Jetson,
