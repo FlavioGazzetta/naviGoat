@@ -130,7 +130,7 @@ rviz2 -d ros/src/autonomy/navigation/config/robot.rviz
   (cable) or `sudo ufw allow from <jetson address>` (Wi-Fi).
 - On Wi-Fi, untick the lidar point cloud and `/cloud_map`: they're too heavy for a hotspot.
 - RViz doesn't switch between cable and Wi-Fi by itself: restart it with the other settings.
-- Toolbar: **2D Pose Estimate** (tell it where the robot is), **2D Goal Pose** (send a goal), **Publish Point** (add or
+- Toolbar: **2D Pose Estimate** (tell it where the robot is), **2D Goal Pose** (send a goal; the arrow's direction counts, so a goal on the robot's own spot just turns it), **Publish Point** (add or
   remove a test person). The local costmap display is off by default; tick it to see obstacles around the robot.
 
 ## 5. Places
@@ -190,8 +190,8 @@ ros2 topic echo /wristband/vibration std_msgs/msg/UInt8MultiArray --no-daemon --
 Each message is `[side, strength]`: side `0` = left, `1` = right, strength `0`–`255` (`0` = off). It prints as
 `array('B', [1, 140])`; `array('B', [0, 0])` means no vibration.
 - **Handle**: only while driving a goal, when a turn on the path comes within 2 m. Sharper turn = stronger.
-- **Wristband**: only while the robot moves, when a person is within 1.2 m (`social:=true`, or a test person clicked
-  with Publish Point). Closer = stronger, 255 at 0.5 m.
+- **Wristband**: when a person is within 2 m of the robot, driving or not (`social:=true`, or a test person clicked
+  with Publish Point). Closer = stronger, 255 at 0.5 m. `warn_distance` and `only_when_moving` on `feedback_node`.
 - Both are sent 10 times a second; a `0` to the old side comes first when the side changes.
 - To make the devices actually vibrate, their nodes have to run too (`ros2 launch bringup launch.py ...`, or see the
   [interaction README](../../interaction/README.md)).

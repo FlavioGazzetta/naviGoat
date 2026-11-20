@@ -1,6 +1,9 @@
 <!--
   Nav2's default navigate_through_poses_w_replanning_and_recovery.xml, without the Spin and BackUp recoveries.
   Same behaviour as navigate_to_pose_no_spin.xml: when stuck, clear the costmaps, stand still, retry, then fail.
+
+  FollowPath uses precise_goal_checker: the goal's heading counts, so RViz's 2D Goal Pose can also turn the robot
+  on the spot. places_node sends its goals with navigate_to_pose_position_only.xml instead.
 -->
 <root BTCPP_format="4" main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -21,7 +24,7 @@
           </RecoveryNode>
         </RateController>
         <RecoveryNode number_of_retries="1" name="FollowPath">
-          <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}"/>
+          <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}" goal_checker_id="precise_goal_checker"/>
           <Sequence>
             <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
             <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>

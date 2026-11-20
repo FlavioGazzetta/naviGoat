@@ -8,8 +8,9 @@ The saved places are kept in a YAML file (places_file) that looks like:
 
 They only make sense on the map they were saved on: keep the file next to that map, and start again if it is rebuilt.
 
-Only a goal's position matters: the robot arrives in whatever direction is convenient (Nav2's goal checker ignores the
-heading). A place's saved yaw is only used for its arrow in RViz.
+Only the position of this node's goals matters: the robot arrives in whatever direction is convenient. Each goal asks
+Nav2 for behavior_trees/navigate_to_pose_position_only.xml, whose goal checker ignores the heading (goals from RViz use
+the default tree, which keeps it). A place's saved yaw is only used for its arrow in RViz.
 
     python3 places_node.py --ros-args -p places_file:=/tmp/places.yaml -p use_sim_time:=true
 """
@@ -87,6 +88,14 @@ class PlacesNode(Node):
         self.base_frame = self.declare_parameter('base_frame', 'base_link').value  # the robot's own frame
         # how far from an object's centre the robot stops: clear of the object and of its inflation
         self.object_standoff = self.declare_parameter('object_standoff', 0.8).value
+        # the behaviour tree our goals ask Nav2 for: positions only (general_goal_checker). '' = Nav2's default tree,
+        # which also checks the heading (precise_goal_checker), like goals from RViz
+        here = os.path.dirname(os.path.realpath(__file__))
+        default_bt = os.path.normpath(os.path.join(here, '..', 'behavior_trees', 'navigate_to_pose_position_only.xml'))
+        bt = self.declare_parameter('goal_behavior_tree', default_bt).value
+        self.goal_bt = bt if bt and os.path.isfile(bt) else ''
+        if bt and not self.goal_bt:
+            self.get_logger().warning(f"{bt} not found: using Nav2's default tree (goals keep their heading)")
         # where the saved places are kept on disk. expanduser turns the "~" into the home folder
         self.places_file = os.path.expanduser(self.declare_parameter('places_file', '~/.ros/navigoat_places.yaml').value)
         self.places = self.load_places()  # name -> {'x', 'y', 'yaw'} on the map
@@ -216,8 +225,8 @@ class PlacesNode(Node):
 
     def drive_to(self, label, spoken, x, y, yaw):
         """Send Nav2 to (x, y) on the map. A new goal replaces the one being driven to. Nav2 needs a heading in the goal,
-        so yaw is the direction that's convenient to arrive in, but arrival only checks the position (the goal
-        checker's yaw_goal_tolerance covers every direction)."""
+        so yaw is the direction that's convenient to arrive in, but arrival only checks the position (the goal asks for
+        the position-only tree, whose goal checker's yaw_goal_tolerance covers every direction)."""
         # if Nav2 isn't running there's nothing we can do (we wait 2 s max for it)
         if not self.navigator.wait_for_server(timeout_sec=2.0):
             self.status('error:Nav2 is not running (no navigate_to_pose action server)')
@@ -228,6 +237,7 @@ class PlacesNode(Node):
         goal.pose.header.frame_id = self.map_frame
         goal.pose.pose.position.x, goal.pose.pose.position.y = x, y
         set_yaw(goal.pose.pose.orientation, yaw)
+        goal.behavior_tree = self.goal_bt  # the position-only tree: arriving in any direction counts
         self.label, self.spoken = label, spoken
         self.goal = self.result = None  # from now on, answers about the previous goal are ignored
         self.status(f'going:{label}')

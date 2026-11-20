@@ -35,7 +35,9 @@ Gazebo tests is in [README_archive.md](README_archive.md).
 
 places_node sends goals to Nav2 through its `navigate_to_pose` **action**, not a topic. Goals from RViz's 2D Goal Pose go
 straight to Nav2 and don't show on `/navigation/status`; Nav2 reports them on `/navigate_to_pose/_action/status`
-(4 = succeeded, 5 = cancelled, 6 = aborted).
+(4 = succeeded, 5 = cancelled, 6 = aborted). They keep their heading: the default tree uses `precise_goal_checker`, so a
+2D Goal Pose on the robot's own spot just turns it. places_node's goals are positions only: each asks Nav2 for
+`behavior_trees/navigate_to_pose_position_only.xml` (`general_goal_checker`, any heading).
 
 ## How it fits together
 

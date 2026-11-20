@@ -89,9 +89,10 @@ class FeedbackNode(Node):
         # parameters (the README has a table of what they do)
         self.base_frame = self.declare_parameter('base_frame', 'base_link').value
         self.map_frame = self.declare_parameter('map_frame', 'map').value  # to tell whether the robot is moving
-        self.warn_distance = self.declare_parameter('warn_distance', 1.2).value  # m: closer people are felt
+        self.warn_distance = self.declare_parameter('warn_distance', 2.0).value  # m: closer people are felt (was 1.2)
         self.min_distance = self.declare_parameter('min_distance', 0.5).value  # m: this close, full strength
-        self.only_when_moving = self.declare_parameter('only_when_moving', True).value  # people felt only while driving
+        # was True (people felt only while driving): now a person near the robot is felt whether it drives or not
+        self.only_when_moving = self.declare_parameter('only_when_moving', False).value
         self.turn_warn_distance = self.declare_parameter('turn_warn_distance', 2.0).value  # m: how far ahead turns are felt
         self.min_turn = math.radians(self.declare_parameter('min_turn_deg', 25.0).value)  # smaller bends aren't turns
         self.full_turn = math.radians(self.declare_parameter('full_turn_deg', 90.0).value)  # this sharp: 255
