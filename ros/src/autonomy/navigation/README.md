@@ -37,9 +37,10 @@ docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus a
 
 TO test with the handle wristband and no lidar (until it gets fixed)
 ```bash
-cd ~/naviGoat
-docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus all --privileged -v /dev:/dev \
-  -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+docker run --rm -it --name navigoat-dev --network=host --ipc=host \
+  --runtime nvidia --gpus all --privileged -v /dev:/dev \
+  -v /run/dbus:/run/dbus --security-opt apparmor=unconfined \
+  -e DISPLAY -v "$PWD:/workspace" -w /workspace -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 ```
 
 
