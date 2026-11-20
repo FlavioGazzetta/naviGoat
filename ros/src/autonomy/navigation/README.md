@@ -65,6 +65,7 @@ Then **one** of these (only one launch at a time):
 | **Use lidar and the Femto together** | add `use_depth_camera:=true` |
 | **Use the Femto with lidar off** | add `use_depth_camera:=true use_lidar:=false` |
 | **Any of the above with social nav** (camera + people) | add `social:=true` |
+| **Local costmap with people only** (no lidar/camera obstacles, social nav still works) | add `local_obstacles:=false` |
 | **A clean map** (moving people left out of it) | add `filter:=object` |
 
 - **A different map**: change `MAP`, e.g. `MAP=/workspace/ros/src/bringup/maps/corridor.db`. A new name starts a new map;
@@ -75,6 +76,9 @@ Then **one** of these (only one launch at a time):
   again with `mode:=localisation`.
 - **In localisation**, the robot must start where the map was started, or get its pose from RViz's **2D Pose Estimate**.
 - **Sensor defaults** are `use_lidar:=true use_depth_camera:=false`. At least one navigation sensor must be enabled.
+- **`local_obstacles:=false`** keeps the lidar and camera out of the local costmap: it only has the people from the
+  social layer (with `social:=true`) and their inflation. SLAM still uses the sensors, and the global costmap is
+  unchanged (map + people). The robot then won't stop for anything that isn't on the map, so use it for tests only.
 - **Femto navigation** adds RGB-D input to SLAM and uses the front-facing `/camera/depth/points` cloud for local obstacles. Start with a fresh database for RGB-D mapping and use that database in localisation. If the camera already runs with `enable_point_cloud:=true` and publishes registered depth and IMU, add `start_femto:=false`.
 - **Everything incl. handle and wristband**: `ros2 launch bringup launch.py database_path:=$MAP` (same flags).
 

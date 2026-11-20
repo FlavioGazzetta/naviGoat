@@ -28,6 +28,14 @@ Status tags: **changed, not tested yet** / **tested offline only** / **idea, not
    no group cost showed up in real tests.
 5. At the end of a route the robot works hard to face one particular direction. For a saved place that's the way it
    faced when the place was saved, which a voice command can't even ask for.
+6. Camera-only test: the robot sits still on a short, clear path. The planner found the path, so the controller is
+   refusing to drive. The map is full of speckle obstacles (camera noise). Suspects, to confirm from the
+   `controller_server` log:
+   - the local costmap goes stale (`Costmap timed out waiting for update`). The depth source has
+     `expected_update_rate` 0.5 s, the controller waits only `costmap_update_timeout` 0.3 s, and the full-resolution
+     cloud is ~6 MB per frame;
+   - RPP stops for noise in the local costmap (`detected collision ahead`), e.g. floor points above
+     `min_obstacle_height` 0.05 m because the camera pose is a guess.
 
 ## Attempts
 
@@ -116,6 +124,43 @@ them. This costs more CPU on the Jetson, so watch it.
     ~0.75 m from the requested point instead of failing.
 - **Offline check**: with the robot at (0, 0) and a place at (0, 2) saved facing 3.14 rad, the goal went out with
   1.571 rad, straight at the place. Without a robot position it falls back to the saved yaw.
+
+### F. Floor marked as obstacles in the local costmap (camera only): changed, not tested yet
+
+- **Seen**: in camera-only mode the local costmap filled with lethal cells on plain floor, while RTAB-Map's map showed
+  the floor as free.
+- **Measured** on the robot, from live data (read-only scripts, nothing changed):
+  - Every depth point inside the local costmap was below z = 0 (-0.11 to -0.065 m). None were above
+    `min_obstacle_height` (0.05 m), yet 120 cells were lethal, and the 87 the camera could see held only floor points.
+    So the marks were left over from moments when the floor looked higher (the robot or camera rocking while
+    driving, depth noise), and they never got cleared.
+  - In the robot model the floor isn't at z = 0: it sits ~11 cm low at 1 m and rises ~7 cm per metre.
+  - A plane fit to the floor (93% inliers, 4 mm rms, same result on two clouds) gives the camera's real pose:
+    `camera_link` is 0.61 m above the floor (model: 0.434 m), pitched 4.6° down (model: level), rolled -1.7°.
+- **Conclusion**: raising `min_obstacle_height` wouldn't help, because the marked floor is already below it. It would
+  also hide real obstacles, which with the wrong pose look ~10 cm shorter than they are near the robot. RTAB-Map's
+  map looked fine only because it drops small clusters and needs repeated hits.
+- **Change**: `top_plate_camera_joint` in `bringup/description/pioneer3at_lidar.xacro` ->
+  xyz `0.20 0 0.336`, rpy `-0.030 0.080 0` (was `0.20 0 0.160`, level). A tape measure gave ~0.59 m to the camera's
+  centre, 2 cm under the fit. We kept the fitted value because it's the one that puts the depth points' floor at z = 0.
+  - The forward offset (0.20 m) can't be measured from the floor, so it is still a guess.
+  - Maps made with the old camera pose should be rebuilt.
+  - No rebuild needed (the launch reads the xacro from the source tree), but relaunch.
+  - Check after relaunch: the same plane fit should give ~0.61 m and ~0° pitch in the model, and the floor should
+    stop showing up in the local costmap.
+
+### G. Option to run with people only in the local costmap: changed, not tested yet
+
+- **Why**: to test navigation and social navigation without the live sensor obstacles (e.g. the depth camera's floor
+  marks from F) getting in the way.
+- **Change**: new launch argument `local_obstacles` (default `true`) in `navigation_robot.launch.py`. With
+  `local_obstacles:=false` the local costmap's voxel layer gets no observation sources at all, so it doesn't subscribe
+  to the lidar or camera clouds and spends no CPU on them. The local costmap then only has the social layer (people)
+  and inflation. SLAM still uses the sensors, and the global costmap is unchanged (map + people). It passes through
+  `ros2 launch bringup launch.py` too. Documented in the navigation `README.md`.
+- **Risk**: the robot won't stop for anything that isn't on the map, only for people and the map itself. Tests only.
+- **Checked**: the generated params for every combination of `use_lidar` / `use_depth_camera` / `local_obstacles`
+  have the right sources, and the social layer, inflation and the no-spin trees stay in.
 
 ## Ideas not tried yet
 
@@ -246,3 +291,6 @@ To read the CPU: open `htop`, filter on `controller_server`, and note a rough av
 - B and C: the old values are in the table above and in the comments next to each change.
 - E: set `yaw_goal_tolerance` back to 0.25 in both files, `go_to_place` back to `place['yaw']`, and turn
   `GoalAngleCritic` back on in sim.
+- F: put `top_plate_camera_joint` back to xyz `0.20 0 0.160`, rpy `0 0 0`.
+- G: just leave `local_obstacles` at its default (`true`); to remove it, take the `sources` rewrites and the argument
+  out of `navigation_robot.launch.py`.
