@@ -131,11 +131,16 @@ class SceneDescription(Node):
         self.create_subscription(String, param('mode_topic', '/mode'), self.on_mode, 10)
         self.create_subscription(Image, param('image_topic', '/camera/color/image_raw'), self.on_image, CAMERA_QOS)
 
-        if load_vlm(self.vlm_model):  # before YOLO starts, see the launch file
+        if not llm.LOCAL_ENABLED:
+            self.get_logger().info('The local vision model is off (local_llm:=false).')
+        elif load_vlm(self.vlm_model):  # before YOLO starts, see the launch file
             self.get_logger().info(f'Local vision model {self.vlm_model} loaded.')
         else:
             self.get_logger().warn('Could not load the vision model. Is Ollama running?')
-        cloud = f'{llm.CLOUD_MODEL} first, the local model as fallback' if llm.cloud_available() else 'no API key, the local model only'
+        if not llm.LOCAL_ENABLED:
+            cloud = f'{llm.CLOUD_MODEL} only' if llm.cloud_available() else 'none: the local model is off and there is no API key'
+        else:
+            cloud = f'{llm.CLOUD_MODEL} first, the local model as fallback' if llm.cloud_available() else 'no API key, the local model only'
         self.get_logger().info(f'Descriptions: {cloud}.')
         print('scene_description ready', flush=True)
 

@@ -224,6 +224,8 @@ def main():
     import llm
     if not interpreter:
         model = 'off (rules only)'
+    elif not llm.LOCAL_ENABLED:
+        model = f'{llm.CLOUD_MODEL} only, the local model is off' if llm.cloud_available() else 'none (the local model is off and there is no API key), rules only'
     elif llm.cloud_available():
         model = f'{llm.CLOUD_MODEL}, the local {llm.LOCAL_MODEL} as fallback'
     else:

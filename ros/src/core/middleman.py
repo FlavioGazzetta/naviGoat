@@ -322,6 +322,8 @@ def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN
                 result = json.loads(answer)
                 if minimum == CONFIDENCE_THRESHOLD:  # a need; an unknown name keeps its stricter minimum
                     minimum = CLOUD_CONFIDENCE_THRESHOLD
+            elif not llm.LOCAL_ENABLED:  # local_llm:=false: Claude or nothing
+                return None
             elif minimum > CONFIDENCE_THRESHOLD:
                 # An unknown name ("walk me to the bottom"): the local model claims to be sure of a wrong place every time
                 # ("iphone" -> computer room, "dean office" -> office), so offline the user hears "I don't know where".
@@ -348,6 +350,8 @@ def qwen_interpreter(locations=LOCATIONS, saved=None, url=OLLAMA_URL, model=QWEN
 
 def warm_up_qwen(url=OLLAMA_URL, model=QWEN_MODEL):
     """Load the model now, so the first request is not slow. False if Ollama is not reachable."""
+    if not llm.LOCAL_ENABLED:  # nothing to load: Claude answers alone
+        return True
     try:
         request = urllib.request.Request(url, json.dumps({'model': model, 'messages': [], 'keep_alive': -1, 'options': OLLAMA_OPTIONS}).encode(), {'Content-Type': 'application/json'})
         urllib.request.urlopen(request, timeout=300).close()

@@ -263,7 +263,9 @@ def load_model(args):
         return RemoteWhisper(args.whisper_url)
     from faster_whisper import WhisperModel
     print(f'Loading Whisper ({args.model})...')
-    return WhisperModel(args.model, device='auto', compute_type='default')
+    # 'cpu', not 'auto': with an NVIDIA GPU in sight 'auto' picks it, and faster-whisper then needs CUDA 12 libraries
+    # (libcublas.so.12) that the image does not have, so the first phrase ended the listening thread
+    return WhisperModel(args.model, device='cpu', compute_type='default')
 
 
 def load_prompt(saved=()):

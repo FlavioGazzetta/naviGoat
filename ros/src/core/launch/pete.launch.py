@@ -1,7 +1,7 @@
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -48,6 +48,10 @@ def generate_launch_description():
         DeclareLaunchArgument('camera', default_value='true'),  # false when the Orbbec ROS 2 driver runs the camera
         DeclareLaunchArgument('search_time', default_value='5.0'),
         DeclareLaunchArgument('use_qwen', default_value='true'),  # the middleman shares scene description's loaded Qwen
+        # false: the local model is never loaded or asked (about 0.9 GB less). Claude answers alone; offline, descriptions
+        # fail and the middleman uses its rules only. start_pete.sh then leaves Ollama off too
+        DeclareLaunchArgument('local_llm', default_value='true'),
+        SetEnvironmentVariable('PETE_LOCAL_LLM', arg('local_llm')),  # read by core/llm.py in every node started below
         DeclareLaunchArgument('voice', default_value='false'),  # true needs the VOICE=true image and the host's sound socket
         DeclareLaunchArgument('whisper_url', default_value='http://127.0.0.1:8765'),
         DeclareLaunchArgument('listen', default_value='true'),

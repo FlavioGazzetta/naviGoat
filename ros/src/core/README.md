@@ -8,6 +8,7 @@ Turns what the user said into one mode and one target, tells perception and navi
 | [middleman_node.py](middleman_node.py) | The ROS 2 node around it |
 | [catalog.py](catalog.py) | The places, the objects and their short names, and what each place is for |
 | [launch/middleman.launch.py](launch/middleman.launch.py) | Starts the node, with a `use_qwen` argument |
+| [launch/everything.launch.py](launch/everything.launch.py) | The whole robot from one launch file: navigation's `navigation_robot.launch.py` (base, lidar, RTAB-Map, Nav2), `pete.launch.py`, and the handle and wristband. Takes the arguments of both (`database_path:=...` is required). It starts the camera, the YOLO server and the people tracker once: use `people:=true` for social navigation, not `social:=true`. Needs the built workspace sourced; on the Jetson: `PETE_LAUNCH=core/launch/everything.launch.py ros/src/core/start_pete.sh voice:=true database_path:=... mode:=localisation` |
 
 ## Topics
 
@@ -91,6 +92,7 @@ ros2 launch /workspace/ros/src/core/launch/pete.launch.py
 | --- | --- | --- |
 | `camera` | `true` | `false` when the Orbbec ROS 2 driver runs the camera instead |
 | `search_time` | `5.0` | seconds object detection looks for a goal |
+| `local_llm` | `true` | `false`: the local model is never loaded or asked, and `start_pete.sh` does not start Ollama (about 0.9 GB less memory). Claude answers alone; offline or without a key, descriptions say "I cannot reach the vision model." and the middleman uses its rules only. Outside this launch file: `PETE_LOCAL_LLM=false` |
 | `use_qwen` | `true` | as above. Here it is on by default: Ollama runs in the same container for scene description, so the middleman shares that loaded Qwen |
 | `people` | `false` | `true` also starts the people tracker (`femto_person_tracker`, publishes `/social_perception/tracks`) and its dashboard, from [social_perception](../autonomy/perception/social_perception). They use the camera Pete already runs, and the tracker uses perception's [YOLO server](../autonomy/perception/yolo_server.py) instead of loading its own model. Needs the `SOCIAL=true` image |
 | `people_max_age` | `1.0` | seconds the tracker retains a missed track; use `2.0` with person following to match its two-second loss window |

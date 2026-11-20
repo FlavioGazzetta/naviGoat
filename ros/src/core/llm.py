@@ -6,6 +6,8 @@ small local vision model through Ollama. Both get the same instructions, so the 
     ANTHROPIC_API_KEY   the key; without it only the local model is used
     PETE_CLOUD_MODEL    default claude-haiku-5-5
     PETE_LOCAL_MODEL    default the LFM2.5-VL 1.6B below
+    PETE_LOCAL_LLM      false: the local model is never loaded or asked (pete.launch.py's local_llm:=false), which frees
+                        about 0.9 GB. Claude then answers alone, and offline nothing does
 """
 
 import concurrent.futures
@@ -21,6 +23,7 @@ OLLAMA_URL = 'http://localhost:11434/api/chat'
 # Chosen on Pete's own two jobs against Qwen3-VL 2B (2.0 GB loaded): 0.88 GB loaded, the same 8 of 11 middleman requests
 # right, descriptions in under a second on the laptop. The 450M version was too weak (a pizza photo became a bedroom).
 LOCAL_MODEL = os.environ.get('PETE_LOCAL_MODEL', 'lfm2.5-vl:1.6b')
+LOCAL_ENABLED = os.environ.get('PETE_LOCAL_LLM', 'true').strip().lower() not in ('false', '0', 'off', 'no')
 OLLAMA_OPTIONS = {'num_ctx': 4096}  # identical on every request, or Ollama reloads the model
 
 CLOUD_MODEL = os.environ.get('PETE_CLOUD_MODEL', 'claude-haiku-5-5')
@@ -123,7 +126,9 @@ def ollama_chat(body, timeout=60):
 
 
 def ask_local(system, text, image=None, schema=None, max_tokens=90, timeout=60, model=None, options=None):
-    """The local model's answer as text, or None if Ollama cannot be reached or is too slow."""
+    """The local model's answer as text, or None if it is switched off, or Ollama cannot be reached or is too slow."""
+    if not LOCAL_ENABLED:
+        return None
     user = {'role': 'user', 'content': text}
     if image:
         user['images'] = [image]
@@ -138,7 +143,9 @@ def ask_local(system, text, image=None, schema=None, max_tokens=90, timeout=60, 
 
 
 def load_local(model=None):
-    """Load the local model onto the GPU and keep it there. True if it loaded."""
+    """Load the local model onto the GPU and keep it there. True if it loaded; False also when it is switched off."""
+    if not LOCAL_ENABLED:
+        return False
     for _ in range(30):  # Ollama may still be starting
         try:
             ollama_chat({'model': model or LOCAL_MODEL, 'messages': [], 'keep_alive': -1, 'options': OLLAMA_OPTIONS}, timeout=300)
