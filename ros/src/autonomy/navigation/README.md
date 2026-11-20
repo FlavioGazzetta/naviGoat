@@ -122,8 +122,8 @@ ros2 topic pub --once /navigation/goto         std_msgs/msg/String "{data: kitch
 ros2 topic pub --once /navigation/forget_place std_msgs/msg/String "{data: kitchen}"   # delete it
 ros2 topic pub --once /navigation/cancel       std_msgs/msg/String "{data: ''}"        # stop driving
 ros2 topic pub --once /navigation/goto_point geometry_msgs/msg/PointStamped "{header: {frame_id: map}, point: {x: 1.0, y: 0.0}}"
-ros2 topic echo /navigation/status          # saved:kitchen, going:kitchen, arrived:kitchen, failed:...
-ros2 topic echo /navigation/places --once --qos-durability transient_local   # the list of saved places
+ros2 topic echo /navigation/status std_msgs/msg/String --field data   # saved:kitchen, going:kitchen, arrived:kitchen, failed:...
+ros2 topic echo /navigation/places std_msgs/msg/String --once --qos-durability transient_local --qos-reliability reliable   # the saved places
 ```
 
 By voice: "Pete, remember this place as the kitchen", "Pete, take me to the kitchen".
@@ -131,7 +131,7 @@ By voice: "Pete, remember this place as the kitchen", "Pete, take me to the kitc
 ### Test going to an object (fake middleman + perception)
 
 🐳 First switch to object mode (otherwise the object position is ignored), then send where the object is. The robot
-stops 0.8 m before it, facing it. Watch `ros2 topic echo /navigation/status`: `waiting:chair` → `going:chair` →
+stops 0.8 m before it, facing it. Watch `ros2 topic echo /navigation/status std_msgs/msg/String --field data`: `waiting:chair` → `going:chair` →
 `arrived:chair`.
 
 ```bash
@@ -152,18 +152,21 @@ Don't click with Publish Point: a click adds a test person there (click again to
 ```bash
 ros2 topic hz /odom                                     # base: ~10 Hz
 ros2 topic hz /unilidar/cloud                           # lidar: ~10 Hz
-ros2 topic echo /people --no-daemon                     # people on the map (social:=true)
-ros2 topic echo /social_perception/tracks --no-daemon --field data   # what the camera tracker sees
+ros2 topic echo /people navigoat_msgs/msg/People --no-daemon                     # people on the map (social:=true)
+ros2 topic echo /social_perception/tracks std_msgs/msg/String --no-daemon --field data   # what the camera tracker sees
 ```
-`--no-daemon` avoids `ros2 topic echo` wrongly saying "not published yet" after restarts. If `hz` shows nothing right
-after a restart, run `ros2 daemon stop` and try again.
+Always give the message type after the topic name, as above. Without it, `ros2 topic echo` first has to look the type
+up, and when the Jetson is busy that can take too long: it then fails with `Could not determine the type for the
+passed topic`, even though the topic is published. `--no-daemon` avoids it wrongly saying "not published yet" after
+restarts. If `hz` shows nothing right after a restart, run `ros2 daemon stop` and try again.
 
 **Vibrations** (what navigation sends to the devices), 🐳:
 ```bash
-ros2 topic echo /handle/vibration --no-daemon --field data      # handle: the next turn on the path
-ros2 topic echo /wristband/vibration --no-daemon --field data   # wristband: the closest person
+ros2 topic echo /handle/vibration std_msgs/msg/UInt8MultiArray --no-daemon --field data      # handle: the next turn on the path
+ros2 topic echo /wristband/vibration std_msgs/msg/UInt8MultiArray --no-daemon --field data   # wristband: the closest person
 ```
-Each message is `[side, strength]`: side `0` = left, `1` = right, strength `0`–`255` (`0` = off).
+Each message is `[side, strength]`: side `0` = left, `1` = right, strength `0`–`255` (`0` = off). It prints as
+`array('B', [1, 140])`; `array('B', [0, 0])` means no vibration.
 - **Handle**: only while driving a goal, when a turn on the path comes within 2 m. Sharper turn = stronger.
 - **Wristband**: only while the robot moves, when a person is within 1.2 m (`social:=true`, or a test person clicked
   with Publish Point). Closer = stronger, 255 at 0.5 m.
