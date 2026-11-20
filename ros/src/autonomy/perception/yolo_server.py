@@ -5,6 +5,8 @@ object_detection.py and the people tracker (social_perception/femto_track_people
 so PyTorch, CUDA and YOLO are in memory once and neither node depends on the other. No ROS in here.
 
     python3 yolo_server.py                 on http://127.0.0.1:8767, only reachable from this machine
+    python3 yolo_server.py --host 0.0.0.0  reachable from other machines too (Pete on the laptop: yolo_url:=http://<this machine>:8767).
+                                           There is no password: anyone on the same network can use it
 
     GET  /health    {"ok": true, "words": 80}
     POST /words     body: a JSON list of words. YOLO looks for these from now on. Words from core/catalog.py are
@@ -117,14 +119,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', default=os.environ.get('PETE_YOLO_MODEL', 'yolov8s-worldv2.pt'))
     parser.add_argument('--port', type=int, default=8767)
+    parser.add_argument('--host', default='127.0.0.1', help='0.0.0.0: also reachable from other machines')
     args = parser.parse_args()
 
     print(f'Loading YOLO ({args.model})...', flush=True)
     Handler.yolo = Yolo(args.model)
     # One thread answers every request in turn. A thread per request is slower here: PyTorch sets the GPU libraries up
     # again in each new thread (measured: 11 ms per picture instead of 3).
-    server = HTTPServer(('127.0.0.1', args.port), Handler)
-    print(f'yolo_server ready on http://127.0.0.1:{args.port}', flush=True)
+    server = HTTPServer((args.host, args.port), Handler)
+    print(f'yolo_server ready on http://{args.host}:{args.port}', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

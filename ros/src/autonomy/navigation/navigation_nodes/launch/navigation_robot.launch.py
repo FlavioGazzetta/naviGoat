@@ -59,8 +59,9 @@ def social_nav():
     /social_perception/tracks for people_node. Needs the PETE=true image, the GPU and the camera."""
     social = IfCondition(LaunchConfiguration('social'))
     return [
-        # YOLO, loaded once, asked over HTTP by the tracker (http://127.0.0.1:8767)
-        ExecuteProcess(cmd=['python3', '-u', os.path.join(PERCEPTION_DIR, 'yolo_server.py')], output='screen', condition=social),
+        # YOLO, loaded once, asked over HTTP by the tracker (http://127.0.0.1:8767). --host 0.0.0.0: other machines can
+        # ask it too, so Pete on the laptop uses this one (yolo_url:=http://192.168.55.1:8767) and loads none of its own
+        ExecuteProcess(cmd=['python3', '-u', os.path.join(PERCEPTION_DIR, 'yolo_server.py'), '--host', '0.0.0.0'], output='screen', condition=social),
         # the tracker, with the same options as in pete.launch.py. Its own Python (the image's SOCIAL=true layer), run from
         # its folder so the YOLO weights saved there are reused
         ExecuteProcess(cmd=['/opt/people_env/bin/python3', '-u', 'femto_track_people.py', '--yolo-url', 'http://127.0.0.1:8767',

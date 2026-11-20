@@ -6,6 +6,8 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 
+LOCAL_YOLO = 'http://127.0.0.1:8767'  # perception's yolo_server.py on this machine
+
 
 def generate_launch_description():
     src = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..'))
@@ -16,7 +18,7 @@ def generate_launch_description():
     people_dir = os.path.join(src, 'autonomy', 'perception', 'social_perception', 'femto_id_velocity_tracker')
     is_true = lambda name: ["'", arg(name), "' == 'true'"]
     people = lambda *command: ExecuteProcess(cmd=['/opt/people_env/bin/python3', '-u', *command], cwd=people_dir, output='screen',
-                                             condition=IfCondition(PythonExpression(is_true('people') + [' or '] + is_true('follow'))))
+                                             condition=IfCondition(PythonExpression(['('] + is_true('people') + [' or '] + is_true('follow') + [') and '] + is_true('tracker'))))
     # Person following (autonomy/person_following): locks onto the nearest tracked person when the middleman says
     # "follow" and works out a spot one metre short of them. As a preview it only publishes that spot
     # (/person_following/goal_preview) and treats the camera as the robot, so it needs no map and cannot move anything.
@@ -52,6 +54,12 @@ def generate_launch_description():
         DeclareLaunchArgument('device', default_value='pulse'),
         DeclareLaunchArgument('silence', default_value='1.0'),  # seconds of quiet that end a spoken phrase
         DeclareLaunchArgument('people', default_value='false'),  # true also tracks people, on /social_perception/tracks
+        # The YOLO server everything asks. The default is this machine's, which perception starts. Another machine's
+        # (http://192.168.55.1:8767, the Jetson's, started there by navigation with social:=true): no YOLO is loaded here
+        DeclareLaunchArgument('yolo_url', default_value=LOCAL_YOLO),
+        # false: the people tracker is not started here, following reads another machine's /social_perception/tracks.
+        # By default that is the case when the YOLO server is another machine's (its social navigation runs the tracker)
+        DeclareLaunchArgument('tracker', default_value=PythonExpression(["'true' if '", arg('yolo_url'), f"' == '{LOCAL_YOLO}' else 'false'"])),
         DeclareLaunchArgument('people_port', default_value='8766'),  # the dashboard's; 8765 is Whisper's
         DeclareLaunchArgument('people_max_age', default_value='1.0'),  # seconds to retain an unobserved track; following uses 2.0
         DeclareLaunchArgument('follow', default_value=arg('people')),  # person following starts with the tracker; follow:=false leaves it out
@@ -65,7 +73,7 @@ def generate_launch_description():
 
         # camera, scene description, then object detection once Qwen has loaded
         IncludeLaunchDescription(launch_file('autonomy', 'perception', 'launch', 'perception.launch.py'),
-                                 launch_arguments={'camera': arg('camera'), 'search_time': arg('search_time')}.items()),
+                                 launch_arguments={'camera': arg('camera'), 'search_time': arg('search_time'), 'yolo_url': arg('yolo_url')}.items()),
         # the voice launch starts the middleman itself, so only one of these two runs
         IncludeLaunchDescription(launch_file('interaction', 'voice', 'launch', 'voice.launch.py'), condition=IfCondition(arg('voice')),
                                  launch_arguments={'use_qwen': arg('use_qwen'), 'whisper_url': arg('whisper_url'),
@@ -74,7 +82,7 @@ def generate_launch_description():
                                  launch_arguments={'use_qwen': arg('use_qwen')}.items()),
         # they read the camera topics that perception's camera already publishes, so no second driver is started
         # --yolo-url: the tracker asks perception's yolo_server.py, as object detection does, so YOLO is in memory once
-        people('femto_track_people.py', '--yolo-url', 'http://127.0.0.1:8767', '--imgsz', '320', '--conf', '0.40',
+        people('femto_track_people.py', '--yolo-url', arg('yolo_url'), '--imgsz', '320', '--conf', '0.40',
                '--max-age', PythonExpression(["'2.0' if "] + is_true('follow') + [" else '", arg('people_max_age'), "'"]), '--no-plot'),
         people('social_tracking_dashboard.py', '--host', '0.0.0.0', '--port', arg('people_port')),
         following(False, '--global-frame', 'camera_link', '--base-frame', 'camera_link'),
