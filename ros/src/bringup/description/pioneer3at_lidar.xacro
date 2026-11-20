@@ -57,8 +57,11 @@
   </link>
 
   <joint name="top_plate_camera_joint" type="fixed">
-    <!-- camera on the robot, no longer sticking out the front. Still a guess: measure x and z on the robot -->
-    <origin xyz="0.20 0 0.160" rpy="0 0 0"/>
+    <!-- camera on the robot, no longer sticking out the front. z, roll and pitch measured on 2026-11-20 by fitting a
+         plane to the floor in the live depth cloud: camera_link 0.61 m above the floor (tape: ~0.59 m to the camera's
+         centre), 4.6 deg down, -1.7 deg roll. Was z 0.160 and level, which put the floor ~10 cm low and tilted, so
+         the local costmap kept floor marks. x (0.20) is still a guess: the floor can't tell it -->
+    <origin xyz="0.20 0 0.336" rpy="-0.030 0.080 0"/>
     <parent link="top_plate"/>
     <child link="camera_link"/>
   </joint>

@@ -110,5 +110,7 @@ Both 10 times a second, side 0 = left, 1 = right. Before switching side, a 0 is 
 - **Localisation can't find the robot from scratch** (lidar only): start where the map was started, or set the pose with RViz's 2D Pose Estimate.
 - **The global costmap has no live lidar** (only the map and people), because small localisation errors stamped real walls into free corridors. New obstacles are handled by the local costmap.
 - **The collision monitor is off** (no `/scan` on this robot). To re-enable: a pointcloud source on the lidar, with the robot's own points filtered out.
-- **The camera position** (`top_plate_camera_joint` in `bringup/description/pioneer3at_lidar.xacro`) is a guess: measure it, people are placed through it.
+- **The camera position** (`top_plate_camera_joint` in `bringup/description/pioneer3at_lidar.xacro`): height, pitch and roll
+  were measured from the floor on 2026-11-20 (0.61 m up, 4.6° down, -1.7° roll). The forward offset is still a guess.
+  People and the floor are placed through it, so re-measure it if the camera is moved.
 - **Nav2's heartbeat check is off** (`bond_timeout` 0 in navigation_robot.launch.py): it kept switching Nav2 off at startup. A stuck controller isn't noticed, but the base stops by itself without commands.

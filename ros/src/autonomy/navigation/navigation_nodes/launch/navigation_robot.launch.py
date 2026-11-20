@@ -88,14 +88,25 @@ def require_navigation_sensor(context):
 def generate_launch_description():
     use_lidar = LaunchConfiguration('use_lidar')
     use_depth_camera = LaunchConfiguration('use_depth_camera')
+    lidar_sources = 'lidar lidar_clearing'  # the local costmap's sources in nav2_params.yaml
     depth_sources = 'depth_camera depth_camera_clearing'
-    nav2_params = RewrittenYaml(source_file=NAV2_PARAMS, param_rewrites=BT_REWRITES)
+    # local_obstacles:=false gives the local costmap's voxel layer no sensor at all (not even subscribed, so no CPU spent
+    # on the clouds): the local costmap then only has the people (social layer) and their inflation
+    sources = 'local_costmap.local_costmap.ros__parameters.voxel_layer.observation_sources'
+    local_obstacles = LaunchConfiguration('local_obstacles')
+    nav2_params = RewrittenYaml(
+        source_file=NAV2_PARAMS,
+        param_rewrites={
+            **BT_REWRITES,
+            sources: IfElseSubstitution(local_obstacles, if_value=lidar_sources, else_value=''),
+        },
+    )
     depth_nav2_params = RewrittenYaml(
         source_file=NAV2_PARAMS,
         param_rewrites={
             **BT_REWRITES,
-            'local_costmap.local_costmap.ros__parameters.voxel_layer.observation_sources': IfElseSubstitution(
-                use_lidar, if_value=f'lidar lidar_clearing {depth_sources}', else_value=depth_sources),
+            sources: IfElseSubstitution(local_obstacles, else_value='', if_value=IfElseSubstitution(
+                use_lidar, if_value=f'{lidar_sources} {depth_sources}', else_value=depth_sources)),
         },
     )
 
@@ -119,6 +130,10 @@ def generate_launch_description():
                               description='use lidar scans for SLAM and local costmap obstacles'),
         DeclareLaunchArgument('use_depth_camera', default_value='false', choices=['true', 'false'],
                               description='use Femto RGB-D input for SLAM and local costmap obstacles'),
+        DeclareLaunchArgument('local_obstacles', default_value='true', choices=['true', 'false'],
+                              description='false: no lidar or camera obstacles in the local costmap, only the people '
+                                          '(social layer). SLAM still uses the sensors. The robot then only avoids '
+                                          'the map and people: it will drive into anything that is not on the map'),
         DeclareLaunchArgument('start_femto', default_value=OrSubstitution(use_depth_camera, LaunchConfiguration('social')),
                               choices=['true', 'false'], description='start Femto driver for depth or social navigation'),
         OpaqueFunction(function=require_navigation_sensor, condition=UnlessCondition(OrSubstitution(use_lidar, use_depth_camera))),
