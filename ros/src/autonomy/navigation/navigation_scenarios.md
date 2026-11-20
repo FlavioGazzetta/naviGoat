@@ -104,12 +104,12 @@ Terminal 1, **one** of these (one launch at a time):
 
 Terminal 2, watch what navigation does (leave it open for the whole run):
 ```bash
-ros2 topic echo /navigation/status --no-daemon --field data
+ros2 topic echo /navigation/status std_msgs/msg/String --no-daemon --field data
 ```
 
 Terminal 3, check the robot is localised at the start (it should print about x 0, y 0):
 ```bash
-ros2 topic echo /localization_pose --once --no-daemon --field pose.pose.position
+ros2 topic echo /localization_pose geometry_msgs/msg/PoseWithCovarianceStamped --once --no-daemon --field pose.pose.position
 ```
 If it doesn't, or the robot in RViz isn't on the map, use RViz's **2D Pose Estimate** at (0, 0) pointing along +x.
 
@@ -185,8 +185,8 @@ ros2 topic pub --once /navigation/goto std_msgs/msg/String "{data: start}"
 ```bash
 ros2 topic pub --once /navigation/cancel std_msgs/msg/String "{data: ''}"                       # stop driving
 ros2 topic echo /navigation/places std_msgs/msg/String --once --qos-durability transient_local --qos-reliability reliable --no-daemon   # saved places
-ros2 topic echo /handle/vibration --no-daemon --field data      # what the handle would get: next turn
-ros2 topic echo /wristband/vibration --no-daemon --field data   # what the wristband would get: closest person
+ros2 topic echo /handle/vibration std_msgs/msg/UInt8MultiArray --no-daemon --field data      # what the handle would get: next turn
+ros2 topic echo /wristband/vibration std_msgs/msg/UInt8MultiArray --no-daemon --field data   # what the wristband would get: closest person
 ```
 RViz **Publish Point**: click on the map to add a standing person, click on them again to remove them.
 
@@ -264,7 +264,7 @@ overwrites it.
 | --- | --- |
 | `error:no transform from ... to map` | RTAB-Map hasn't localised yet: wait, or use 2D Pose Estimate at (0, 0) |
 | `error:Nav2 is not running` | Nav2 hasn't started yet (`Managed nodes are active`), or it switched itself off: restart the launch |
-| Path drawn but the robot doesn't move | check `ros2 topic echo /model/pioneer3at/cmd_vel`. All zeros: the collision monitor is stopping it |
+| Path drawn but the robot doesn't move | check `ros2 topic echo /model/pioneer3at/cmd_vel geometry_msgs/msg/Twist`. All zeros: the collision monitor is stopping it |
 | `failed:...` next to a person | a walker was standing on the goal at that moment: send the step again |
 | No purple cylinders | `fake_people:=` path wrong (the launch output says `0 standing and 0 walking`) |
 | Old place arrows in the wrong spots | `indoor_places.yaml` is from an older map: forget them (section 2) or delete the file |
