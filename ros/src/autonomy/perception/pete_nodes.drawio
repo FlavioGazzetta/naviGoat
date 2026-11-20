@@ -1,0 +1,97 @@
+<mxfile host="65bd71144e">
+    <diagram name="Pete nodes" id="pete-nodes">
+        <mxGraphModel dx="1548" dy="775" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1150" pageHeight="900" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="headset" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#f5f5f5;strokeColor=#666666;" value="Headset&lt;br&gt;(microphone and speakers)" vertex="1">
+                    <mxGeometry height="60" width="200" x="40" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="voice" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Voice&lt;/b&gt;&lt;br&gt;voice.py" vertex="1">
+                    <mxGeometry height="60" width="200" x="320" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="whisper" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;Whisper server&lt;/b&gt;&lt;br&gt;speech to text, on the GPU" vertex="1">
+                    <mxGeometry height="60" width="200" x="600" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" edge="1" parent="1" source="headset" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;startArrow=block;startFill=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" target="voice" value="Bluetooth">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" edge="1" parent="1" source="voice" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;startArrow=block;startFill=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" target="whisper" value="HTTP&lt;br&gt;:8765">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mid" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Middleman&lt;/b&gt; (middleman_node.py)&lt;br&gt;works out what was asked, tells the right node, and says the result" vertex="1">
+                    <mxGeometry height="80" width="760" x="40" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" edge="1" parent="1" source="voice" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.3;exitY=1.0;exitDx=0;exitDy=0;entryX=0.4474;entryY=0.0;entryDx=0;entryDy=0;" target="mid" value="/speech/text">
+                    <mxGeometry relative="1" x="-0.45" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" edge="1" parent="1" source="mid" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.5526;exitY=0.0;exitDx=0;exitDy=0;entryX=0.7;entryY=1.0;entryDx=0;entryDy=0;" target="voice" value="/pete/response">
+                    <mxGeometry relative="1" x="-0.45" as="geometry"/>
+                </mxCell>
+                <mxCell id="llm" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;Language model&lt;/b&gt;&lt;br&gt;Claude Haiku, or the local&lt;br&gt;model in Ollama" vertex="1">
+                    <mxGeometry height="70" width="200" x="40" y="440" as="geometry"/>
+                </mxCell>
+                <mxCell id="scene" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Scene description&lt;/b&gt;&lt;br&gt;scene_description.py" vertex="1">
+                    <mxGeometry height="70" width="200" x="320" y="440" as="geometry"/>
+                </mxCell>
+                <mxCell id="detect" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Object detection&lt;/b&gt;&lt;br&gt;object_detection.py" vertex="1">
+                    <mxGeometry height="70" width="200" x="600" y="440" as="geometry"/>
+                </mxCell>
+                <mxCell id="yolo" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;YOLO server&lt;/b&gt;&lt;br&gt;yolo_server.py&lt;br&gt;shared with the people tracker" vertex="1">
+                    <mxGeometry height="70" width="200" x="880" y="440" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" edge="1" parent="1" source="mid" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;startArrow=block;startFill=1;exitX=0.1316;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;" target="llm" value="the command,&lt;br&gt;its meaning">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" edge="1" parent="1" source="mid" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.4342;exitY=1.0;exitDx=0;exitDy=0;entryX=0.25;entryY=0.0;entryDx=0;entryDy=0;" target="scene" value="/mode">
+                    <mxGeometry relative="1" x="-0.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7" edge="1" parent="1" source="scene" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.75;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5658;entryY=1.0;entryDx=0;entryDy=0;" target="mid" value="/scene_description">
+                    <mxGeometry relative="1" x="-0.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" edge="1" parent="1" source="mid" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.8026;exitY=1.0;exitDx=0;exitDy=0;entryX=0.25;entryY=0.0;entryDx=0;entryDy=0;" target="detect" value="/mode&lt;br&gt;/goal">
+                    <mxGeometry relative="1" x="-0.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" edge="1" parent="1" source="detect" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.75;exitY=0.0;exitDx=0;exitDy=0;entryX=0.9342;entryY=1.0;entryDx=0;entryDy=0;" target="mid" value="/object_status">
+                    <mxGeometry relative="1" x="-0.5" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" edge="1" parent="1" source="scene" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;startArrow=block;startFill=1;exitX=0.0;exitY=0.5;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0;" target="llm" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" edge="1" parent="1" source="detect" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;startArrow=block;startFill=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" target="yolo" value="HTTP&lt;br&gt;:8767">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="camera" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#f5f5f5;strokeColor=#666666;" value="&lt;b&gt;Camera&lt;/b&gt; (Femto Bolt)&lt;br&gt;/camera/color/image_raw&lt;br&gt;/camera/depth_registered/image_rect&lt;br&gt;/camera/color/camera_info" vertex="1">
+                    <mxGeometry height="90" width="420" x="320" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="nav" parent="1" style="html=1;whiteSpace=wrap;fontSize=13;rounded=1;fillColor=#f5f5f5;strokeColor=#666666;" value="&lt;b&gt;Navigation&lt;/b&gt;&lt;br&gt;places the object on the map" vertex="1">
+                    <mxGeometry height="70" width="200" x="900" y="650" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12" edge="1" parent="1" source="camera" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.2381;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" target="scene" value="">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="420" y="640"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e13" edge="1" parent="1" source="camera" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.9048;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;" target="detect" value="">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="700" y="640"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e14" edge="1" parent="1" source="detect" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;exitX=0.85;exitY=1.0;exitDx=0;exitDy=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;" target="nav" value="/object_mapping&lt;br&gt;(x, y, z)">
+                    <mxGeometry relative="1" x="-0.0877" y="50" as="geometry">
+                        <mxPoint as="offset"/>
+                        <Array as="points">
+                            <mxPoint x="770" y="560"/>
+                            <mxPoint x="820" y="560"/>
+                            <mxPoint x="820" y="685"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
