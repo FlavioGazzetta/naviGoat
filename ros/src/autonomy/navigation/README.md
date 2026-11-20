@@ -34,6 +34,16 @@ docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus a
   -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 ```
 - More terminals in the same container: `docker exec -it navigoat-dev bash`
+
+TO test with the handle wristband and no lidar (until it gets fixed)
+```bash
+docker run --rm -it --name navigoat-dev --network=host --ipc=host \
+  --runtime nvidia --gpus all --privileged -v /dev:/dev \
+  -v /run/dbus:/run/dbus --security-opt apparmor=unconfined \
+  -e DISPLAY -v "$PWD:/workspace" -w /workspace -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+```
+
+
 - The base and lidar ports are found automatically. For social nav the image needs Pete's extras:
 `docker build -f docker/Dockerfile.dev --build-arg PETE=true -t navigoat:dev .`
 - First time only, build: `cd /workspace && colcon build --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install`
