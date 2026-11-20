@@ -92,8 +92,10 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.25  # m: "arrived" = this close to the goal's position
+      # was 0.25: goals are positions only. A heading difference is at most pi, so 3.15 accepts any direction and the
+      # robot arrives in whatever direction is convenient (voice commands can't ask for one anyway)
+      yaw_goal_tolerance: 3.15
     # Path follower: Regulated Pure Pursuit, inside the Rotation Shim. Pure pursuit steers towards a point a little
     # further along Nav2's path, so the robot drives the line that's drawn (MPPI only treated the path as one cost
     # among many, and wandered off it). The shim first turns the robot on the spot to face the path when it points
@@ -127,7 +129,7 @@ controller_server:
       regulated_linear_scaling_min_radius: 0.9
       regulated_linear_scaling_min_speed: 0.1
       use_cost_regulated_linear_velocity_scaling: true  # slow down near obstacles
-      cost_scaling_dist: 0.3
+      cost_scaling_dist: 0.2               # was 0.3: only slow down when really close, so it doesn't crawl past walls
       cost_scaling_gain: 1.0
       inflation_cost_scaling_factor: 5.0    # same as the costmaps' inflation cost_scaling_factor
       use_fixed_curvature_lookahead: false
@@ -260,8 +262,11 @@ local_costmap:
         prediction_cost: 200        # cost right in front of a walker, fading to 0 at the end of their predicted path
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0  # was 3.0: cost drops off faster away from obstacles
-        inflation_radius: 0.45  # was 0.70: narrow corridors aren't costly wall to wall
+        # cost = 252 * exp(-5 * (distance - 0.26)). The radius is where that has faded to ~17, so there is no cliff at
+        # the edge (0.45 m cut it off at ~97 -> 0, and the robot reacted to that step). Still steep, so the cost near a
+        # wall is low enough to pass close
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.8
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -324,7 +329,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 1.0
+      update_frequency: 3.0  # was 1.0: people were drawn up to 1 s late, and the planner plans on this costmap
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
@@ -382,8 +387,11 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0  # global only: wider, gentler slope than the local costmap's 5.0, so a small cost
-        inflation_radius: 0.6     # spans the corridor and the planner keeps to the middle. Only the footprint blocks
+        # was 3.0 / 0.6: that cut off at cost ~91 -> 0 and kept paths far from walls. 5.0 / 0.9 is cheaper close to
+        # walls (passes doorways and furniture more readily), and fades to ~10 at 0.9 m, so a corridor's middle is
+        # still a little cheaper than its sides. Only the footprint blocks
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.9
       always_send_full_costmap: True
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.

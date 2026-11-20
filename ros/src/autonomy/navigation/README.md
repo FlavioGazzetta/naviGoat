@@ -131,7 +131,7 @@ By voice: "Pete, remember this place as the kitchen", "Pete, take me to the kitc
 ### Test going to an object (fake middleman + perception)
 
 🐳 First switch to object mode (otherwise the object position is ignored), then send where the object is. The robot
-stops 0.8 m before it, facing it. Watch `ros2 topic echo /navigation/status std_msgs/msg/String --field data`: `waiting:chair` → `going:chair` →
+stops 0.8 m before it. Watch `ros2 topic echo /navigation/status std_msgs/msg/String --field data`: `waiting:chair` → `going:chair` →
 `arrived:chair`.
 
 ```bash

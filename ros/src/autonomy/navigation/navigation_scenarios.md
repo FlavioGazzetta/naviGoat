@@ -156,7 +156,7 @@ ros2 topic pub --once /navigation/save_place std_msgs/msg/String "{data: door}"
 ```bash
 ros2 topic pub --once /navigation/goto std_msgs/msg/String "{data: desk}"
 ```
-Status: `going:desk` → `arrived:desk`. It arrives facing the way it faced when the place was saved.
+Status: `going:desk` → `arrived:desk`. It arrives in whatever direction is convenient: only the position is checked (within 0.25 m).
 
 **Step 5: go to an object.** Act as the middleman and perception. First switch to object mode (otherwise the object's
 position is ignored):
@@ -167,7 +167,7 @@ Status: `waiting:chair`. Then send where the chair is, on the map:
 ```bash
 ros2 topic pub --once /object_mapping geometry_msgs/msg/PointStamped "{header: {frame_id: map}, point: {x: -3.5, y: -3.5}}"
 ```
-Status: `going:chair` → `arrived:chair`. The robot stops 0.8 m before the chair, facing it.
+Status: `going:chair` → `arrived:chair`. The robot stops 0.8 m before the chair (usually facing it, but the heading isn't checked).
 
 Or, like the real camera, relative to the robot's camera (x = metres in front, y = metres to the left):
 ```bash

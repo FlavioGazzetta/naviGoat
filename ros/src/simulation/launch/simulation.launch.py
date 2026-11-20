@@ -7,6 +7,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from nav2_common.launch import RewrittenYaml
 
 
 def launch_slam(context):
@@ -39,6 +40,15 @@ def generate_launch_description():
             'autonomy', 'navigation', 'config',
             'nav2_sim_params.yaml'
         )
+    )
+    # Behaviour trees without the Spin / BackUp recoveries: when stuck, stop and wait instead of turning on the spot
+    bt_dir = os.path.abspath(os.path.join(simulation_dir, '..', 'autonomy', 'navigation', 'behavior_trees'))
+    nav2_params = RewrittenYaml(
+        source_file=nav2_params_path,
+        param_rewrites={
+            'bt_navigator.ros__parameters.default_nav_to_pose_bt_xml': os.path.join(bt_dir, 'navigate_to_pose_no_spin.xml'),
+            'bt_navigator.ros__parameters.default_nav_through_poses_bt_xml': os.path.join(bt_dir, 'navigate_through_poses_no_spin.xml'),
+        },
     )
 
     return LaunchDescription([
@@ -86,7 +96,7 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('nav2_bringup'), 'launch', 'navigation_launch.py')), # I ll change later to custom
             launch_arguments={
                 'use_sim_time': 'true',
-                'params_file': nav2_params_path,
+                'params_file': nav2_params,
                 'use_composition': 'False',
             }.items()
         ),

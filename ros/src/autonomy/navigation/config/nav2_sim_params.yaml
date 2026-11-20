@@ -95,8 +95,10 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.25  # m: "arrived" = this close to the goal's position
+      # was 0.25: goals are positions only. A heading difference is at most pi, so 3.15 accepts any direction and the
+      # robot arrives in whatever direction is convenient (voice commands can't ask for one anyway)
+      yaw_goal_tolerance: 3.15
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
       time_steps: 56
@@ -146,7 +148,7 @@ controller_server:
         cost_weight: 5.0
         threshold_to_consider: 1.4
       GoalAngleCritic:
-        enabled: true
+        enabled: false  # was true: it turned the robot to the goal's heading near the end, and goals have no heading now
         cost_power: 1
         cost_weight: 3.0
         threshold_to_consider: 0.5
@@ -229,8 +231,8 @@ local_costmap:
         prediction_cost: 200        # cost right in front of a walker, fading to 0 at the end of their predicted path
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.70
+        cost_scaling_factor: 5.0  # was 3.0 / 0.70: same as the real robot now (see nav2_params.yaml): passes closer,
+        inflation_radius: 0.8     # and the cost fades to ~17 at the edge instead of dropping from ~67 to 0
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: False
@@ -260,7 +262,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 1.0
+      update_frequency: 3.0  # was 1.0: people were drawn up to 1 s late
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: pioneer3at/base_link
@@ -302,8 +304,8 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.7
+        cost_scaling_factor: 5.0  # was 3.0 / 0.7: same as the real robot now (see nav2_params.yaml)
+        inflation_radius: 0.9
       always_send_full_costmap: True
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.

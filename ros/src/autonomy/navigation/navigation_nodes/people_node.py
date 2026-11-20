@@ -2,8 +2,9 @@
 
 People come from three places, and are all published together on /people, 10 times a second:
   - Enid's tracker: positions relative to the camera, put on the map with where the camera was when the image was
-    taken. A person's speed comes from how they moved on the map over the last second, so the robot turning doesn't
-    make standing people look like they walk. Someone standing is remembered for remember_for seconds after the camera
+    taken. A person's speed comes from how they moved on the map over the last velocity_window seconds, so the robot
+    turning doesn't make standing people look like they walk. A walker is moved forward by how old the image is, so
+    the costmaps get where they are now, not where they were when the camera saw them. Someone standing is remembered for remember_for seconds after the camera
     loses them (the robot may only have turned away), someone walking for track_timeout seconds.
   - RViz's "Publish Point" tool: a click adds a standing person, a click on one removes them.
   - fake_people, a YAML file of made-up people for testing (see ../config/fake_people.yaml): standing people, and
@@ -40,30 +41,36 @@ WALKING = 0.25  # m/s: anyone slower is standing (the same as the social layer's
 
 
 class Track:
-    """One person from the tracker: where they were on the map over the last second."""
+    """One person from the tracker: where they were on the map over the last `window` seconds."""
 
-    def __init__(self):
-        # we use the deque as a sliding window: the last 1 s of positions of this person
+    def __init__(self, window=1.0, min_span=0.5):
+        self.window = window  # s of positions the speed is fitted on
+        self.min_span = min_span  # s of positions needed before the speed is trusted
+        # we use the deque as a sliding window: the last `window` seconds of positions of this person
         self.history = collections.deque()  # (stamp, x, y), stamp = when the image was taken, in seconds
         self.last_seen = 0.0  # when we last got them, in seconds
 
     def add(self, stamp, x, y, now):
         self.history.append((stamp, x, y))
-        # throw away the positions older than 1 s
-        while stamp - self.history[0][0] > 1.0:
+        # throw away the positions older than the window
+        while stamp - self.history[0][0] > self.window:
             self.history.popleft()
         self.last_seen = now
+
+    def last_stamp(self):
+        # when the image they were last seen in was taken
+        return self.history[-1][0]
 
     def position(self):
         # where they were the last time we saw them
         return self.history[-1][1], self.history[-1][2]
 
     def velocity(self):
-        """(vx, vy) in m/s: the slope of the best-fitting line through the last second. 0 until there is half a second."""
+        """(vx, vy) in m/s: the slope of the best-fitting line through the window. 0 until there is min_span of it."""
         # split the history into 3 arrays: the times, the x's and the y's
         t, x, y = (np.array(column) for column in zip(*self.history))
         # with too little data the speed would just be noise, so we say they're standing
-        if len(t) < 3 or t[-1] - t[0] < 0.5:
+        if len(t) < 3 or t[-1] - t[0] < self.min_span:
             return 0.0, 0.0
         t = t - t[0]  # start the times at 0 (the real timestamps are huge numbers, which the line fit doesn't like)
         # fit a straight line through x over time: its slope is the speed along x. same thing for y.
@@ -109,6 +116,12 @@ class PeopleNode(Node):
         self.camera_frame = self.declare_parameter('camera_frame', 'camera_link').value  # the tracker's x forward, y left
         self.track_timeout = self.declare_parameter('track_timeout', 0.5).value  # s: then a walker we lost is dropped
         self.remember_for = self.declare_parameter('remember_for', 3.0).value  # s: how long standing people are kept
+        # the speed is a line fitted through the last velocity_window seconds, once there are min_velocity_span of them.
+        # shorter = a walker's speed (and the social layer's prediction) shows up sooner, but is noisier. was 1.0 / 0.5
+        self.velocity_window = self.declare_parameter('velocity_window', 0.8).value  # s
+        self.min_velocity_span = self.declare_parameter('min_velocity_span', 0.4).value  # s
+        # a walker is moved forward by how old the image is (YOLO + tracker latency), at most this much
+        self.max_extrapolation = self.declare_parameter('max_extrapolation', 0.5).value  # s
         self.standing, self.walking = load_fake_people(self.declare_parameter('fake_people', 'none').value)
         # -1: the tracker is on our ROS domain. otherwise the domain it's on (see relay_tracks_from)
         tracker_domain = self.declare_parameter('tracker_domain', -1).value
@@ -212,12 +225,19 @@ class PeopleNode(Node):
             # the tracker also has people it isn't sure about yet: we skip those
             if not track.get('confirmed', True):
                 continue
+            # and people it didn't see in this image, only predicted. its prediction assumes the camera stands still,
+            # so as soon as the robot moves or turns it drifts away from the real person. we remember people ourselves
+            # (remember_for / track_timeout), so only real detections go in
+            if not track.get('observed', True):
+                continue
             # the person relative to the camera -> the same point on the map
             point = PointStamped()
             point.point.x, point.point.y = float(track['x']), float(track['y'])
             p = do_transform_point(point, transform).point
-            # add it to that person's history. setdefault makes a new Track the first time we see that id
-            self.tracks.setdefault(track['id'], Track()).add(stamp, p.x, p.y, now)
+            # add it to that person's history, with a new Track the first time we see that id
+            if track['id'] not in self.tracks:
+                self.tracks[track['id']] = Track(self.velocity_window, self.min_velocity_span)
+            self.tracks[track['id']].add(stamp, p.x, p.y, now)
 
     def on_click(self, msg):
         """RViz's Publish Point: add a standing person there, or remove the clicked person within 0.5 m."""
@@ -254,7 +274,14 @@ class PeopleNode(Node):
             elif age > self.track_timeout:
                 people.append((i, *track.position(), 0.0, 0.0))  # not seen lately: kept where they stood
             else:
-                people.append((i, *track.position(), vx, vy))  # seen just now: where they are and how they walk
+                # seen just now: where they are and how they walk. a walker is moved forward by how old the image is
+                # (YOLO and the tracker take a few tenths of a second), so the costmaps get where they are now.
+                # clamped at 0: with real people on the simulation the camera's clock is not the simulation's
+                x, y = track.position()
+                if walking:
+                    dt = min(max(now - track.last_stamp(), 0.0), self.max_extrapolation)
+                    x, y = x + vx * dt, y + vy * dt
+                people.append((i, x, y, vx, vy))
         # the fake people from the yaml file, with the ids -1000, -1001...
         fake_id = -1000
         for x, y in self.standing:

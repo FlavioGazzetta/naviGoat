@@ -71,9 +71,11 @@ to motor commands, and back to the person as vibrations. One command starts all 
   `/middleman/mode` `{"mode": "location", "target": "kitchen"}`), as an **object** found by perception (`object` mode,
   then the object's position on `/object_mapping`), or directly as a place name or a point (`/navigation/goto`,
   `/navigation/goto_point`).
-- **Places** are robot poses saved by name (`/navigation/save_place`) in a file next to the map (`lab_places.yaml`),
+- **Places** are robot positions saved by name (`/navigation/save_place`) in a file next to the map (`lab_places.yaml`),
   because they only make sense on that map.
-- For an **object**, it computes a stopping point 0.8 m short of it, facing it, so the robot doesn't drive into the chair.
+- For an **object**, it computes a stopping point 0.8 m short of it, so the robot doesn't drive into the chair.
+- Goals are **positions only**: Nav2's goal checker accepts any heading, so the robot arrives in whatever direction is
+  convenient (a voice command can't ask for one).
 - It sends the goal to Nav2's `navigate_to_pose` action, and reports back: `/navigation/status` (`going:`, `arrived:`,
   `failed:`), `/middleman/done` when it arrives (the middleman then says "Arrived"), and `/pete/response` for what Pete
   says out loud ("I couldn't get to the kitchen").
@@ -192,7 +194,7 @@ the lidar test showed a map and mapping didn't.
 **Built:**
 - **people_node:** tracker JSON → map (TF), velocities, test people from YAML or RViz clicks, a 1 s timeout against ghosts
 - **social_layer (C++):** the person (lethal), personal space stretched by walking speed, the **group strip** (< 2.2 m apart), **walker prediction** (2 s), ignores the handler (< 0.6 m), live-tunable
-- **places_node:** save, go to and forget places (stored next to each map), goals by point, **object mode** (stop 0.8 m before it, facing it), middleman and voice integration, status topics
+- **places_node:** save, go to and forget places (stored next to each map), goals by point, **object mode** (stop 0.8 m before it), middleman and voice integration, status topics
 - **feedback_node:** turn and proximity vibrations in the device format, sending a zero before switching side
 - **Simulation:** Gazebo world, mapping then localisation, fake people, and a **real-people-on-simulated-map** mode (separate ROS domains)
 - **Real robot:** `navigation_robot.launch.py`: **one command**, flags for `mode` / `teleop` / `social` / `filter`; ports auto-detected; motors switched on automatically
