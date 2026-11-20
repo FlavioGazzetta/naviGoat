@@ -69,7 +69,9 @@ def _cloud_client():
             return None
         try:
             import anthropic
-            _client = anthropic.Anthropic(timeout=CLOUD_TIMEOUT, max_retries=0)
+            # gzip only: the navigoat:gps image's Brotli (1.1.0) is too old for its web library, and every Brotli-compressed
+            # reply failed to unpack, which looked like "Claude cannot be reached"
+            _client = anthropic.Anthropic(timeout=CLOUD_TIMEOUT, max_retries=0, default_headers={'Accept-Encoding': 'gzip'})
         except ImportError:
             _cloud_disabled = True
     return _client
