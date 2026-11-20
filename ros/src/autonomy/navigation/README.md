@@ -47,6 +47,14 @@ NAV=/workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_ro
 MAP=/workspace/ros/src/bringup/maps/lab.db      # the map file: a new name = a new map
 ```
 
+if using only the camera we add the flags:
+
+```bash
+use_depth_camera:=true use_lidar:=false
+```
+
+use_depth_camera:=true use_lidar:=false
+
 Then **one** of these (only one launch at a time):
 
 | What | Command |
@@ -62,7 +70,7 @@ Then **one** of these (only one launch at a time):
 - **A different map**: change `MAP`, e.g. `MAP=/workspace/ros/src/bringup/maps/corridor.db`. A new name starts a new map;
   an existing one is continued (mapping) or used (localisation). Each map keeps its own places (`corridor_places.yaml`).
 - **The motors turn on by themselves** once the base connects (`Connected to Imperial_3097` in the output).
-- **Keyboard** (with `teleop:=true`), 🐳 second terminal: `ros2 run teleop_twist_keyboard teleop_twist_keyboard`
+- **Keyboard** (with `teleop:=true`), second terminal: `ros2 run teleop_twist_keyboard teleop_twist_keyboard`
 - **Map with the keyboard, then navigate**: run with `teleop:=true`, drive around, Ctrl+C (saves the map), then launch
   again with `mode:=localisation`.
 - **In localisation**, the robot must start where the map was started, or get its pose from RViz's **2D Pose Estimate**.
@@ -75,12 +83,12 @@ heavy), `places_file:=...`, `pioneer_port:=...` / `lidar_port:=...` (only if the
 
 ### Just drive with the keyboard (no lidar, no map, no Nav2)
 
-🐳 Only the base and its motors. Not together with a navigation launch (two base drivers on one port both fail):
+Only the base and its motors. Not together with a navigation launch (two base drivers on one port both fail):
 ```bash
 source /workspace/install/setup.bash
 ros2 launch bringup base.launch.py
 ```
-Wait for `Connected to Imperial_3097`, then 🐳 in a second terminal:
+Wait for `Connected to Imperial_3097`, then in a second terminal:
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
