@@ -201,7 +201,7 @@ RViz **Publish Point**: click on the map to add a standing person, click on them
 | 6: chair → start | straight | passes pair C | crosses W3's line |
 
 The robot should pass behind walkers rather than cut in front (the social layer adds cost where each walker will be in
-the next 2 s). The wristband only gets a value when someone is within 1.2 m, so expect weak or no values in the open.
+the next 2 s). The wristband only gets a value when someone is within 2 m, so expect weak or no values in the open.
 
 **Group rule on and off (scenario 2, optional).** After step 5, turn the group rule off (section 5), then drive the same
 leg again:

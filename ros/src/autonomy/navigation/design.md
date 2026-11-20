@@ -74,8 +74,9 @@ to motor commands, and back to the person as vibrations. One command starts all 
 - **Places** are robot positions saved by name (`/navigation/save_place`) in a file next to the map (`lab_places.yaml`),
   because they only make sense on that map.
 - For an **object**, it computes a stopping point 0.8 m short of it, so the robot doesn't drive into the chair.
-- Goals are **positions only**: Nav2's goal checker accepts any heading, so the robot arrives in whatever direction is
-  convenient (a voice command can't ask for one).
+- Goals from voice, saved places, objects and points are **positions only**: places_node asks Nav2 for a tree whose goal
+  checker accepts any heading, so the robot arrives in whatever direction is convenient (a voice command can't ask for
+  one). Goals from RViz's 2D Goal Pose keep their heading, so they can also turn the robot on the spot.
 - It sends the goal to Nav2's `navigate_to_pose` action, and reports back: `/navigation/status` (`going:`, `arrived:`,
   `failed:`), `/middleman/done` when it arrives (the middleman then says "Arrived"), and `/pete/response` for what Pete
   says out loud ("I couldn't get to the kitchen").
@@ -105,8 +106,8 @@ to motor commands, and back to the person as vibrations. One command starts all 
 
 - **Turns → handle.** It reads the path on `/plan`. When a turn sharper than 25° comes within 2 m, it sends
   `[side, strength]` to `/handle/vibration`; the sharper the turn, the stronger (255 at 90° or more).
-- **People → wristband.** It reads `/people`. While the robot moves, the closest person within 1.2 m gives
-  `[side, strength]` on `/wristband/vibration`; the closer, the stronger (255 at 0.5 m).
+- **People → wristband.** It reads `/people`. The closest person within 2 m of the robot gives `[side, strength]` on
+  `/wristband/vibration`, whether the robot is driving or not; the closer, the stronger (255 at 0.5 m).
 - Both are sent 10 times a second. When the side changes, a 0 goes to the old side first, because the devices keep
   vibrating until they get a 0.
 

@@ -112,6 +112,7 @@ them. This costs more CPU on the Jetson, so watch it.
   - Sim MPPI: `GoalAngleCritic` off.
   - Docs updated to match: `TOPICS.md`, `README.md`, `navigation_scenarios.md`, `design.md`.
 - **Why**: voice commands can't ask for a direction, and a guide robot only needs to get the person to the place.
+- **Later changed in H**: RViz goals keep their heading again. Only places_node's goals are position-only now.
 - **Limits**:
   - The sim's Hybrid-A* still needs a heading, and the installed Nav2 (1.3.13) has no "any heading" mode (newer Nav2
     has `goal_heading_mode`). It gets the straight-line direction, so if the route arrives from another side the robot
@@ -125,7 +126,46 @@ them. This costs more CPU on the Jetson, so watch it.
 - **Offline check**: with the robot at (0, 0) and a place at (0, 2) saved facing 3.14 rad, the goal went out with
   1.571 rad, straight at the place. Without a robot position it falls back to the saved yaw.
 
-### F. Floor marked as obstacles in the local costmap (camera only): changed, not tested yet
+### H. RViz goals keep their heading, voice goals stay position-only: changed, tested offline only
+
+- **Problem with E**: E made every goal position-only, including RViz's 2D Goal Pose. Then there was no way left to
+  just turn the robot on the spot by giving it a goal where it already stands with a new heading.
+- **Change**:
+  - Two goal checkers in both param files: `precise_goal_checker` (heading within 0.25 rad) and `general_goal_checker`
+    (any heading, as in E). The behaviour tree picks one per goal through FollowPath's `goal_checker_id`.
+  - The default trees (`navigate_to_pose_no_spin.xml`, `navigate_through_poses_no_spin.xml`) use
+    `precise_goal_checker`. RViz goals use these.
+  - New `behavior_trees/navigate_to_pose_position_only.xml`: the same tree with `general_goal_checker`. `places_node`
+    asks for it in every goal it sends (the goal's `behavior_tree` field, parameter `goal_behavior_tree`), so voice,
+    saved places, objects and points stay position-only.
+  - Something has to do the final turn. On the real robot, the Rotation Shim's `rotate_to_goal_heading` is now on
+    (before, nothing turned the robot to the heading at the end). In sim, MPPI's `GoalAngleCritic` is back on (E had
+    turned it off). Position-only goals finish as soon as the position is reached, before any of this turns them.
+  - Docs: `TOPICS.md`, `README.md` and `design.md` say RViz goals keep their heading.
+- **Side effect**: other goals that use Nav2's default tree keep their heading too, i.e. the GPS goal sender and person
+  following with `follow_drive:=true`. At the end of a GPS trip the robot turns to the route's direction.
+- **Offline check**: a `places_node` goal went out with `behavior_tree` set to the position-only tree.
+
+### I. Wristband buzzes for anyone near the robot, driving or not, out to 2 m: changed, not tested yet
+
+- **Before**: `feedback_node` only sent the wristband a value while the robot was driving (faster than ~5 cm/s), and
+  only for a person within 1.2 m. A parked robot never buzzed, and the range felt short.
+- **Change** (`navigation_nodes/feedback_node.py` defaults): `only_when_moving` True -> False, `warn_distance`
+  1.2 -> 2.0 m. `min_distance` stays 0.5 m.
+  - Strength, linear: 0 at 2 m, 85 at 1.5 m, 136 at 1.2 m, 170 at 1 m, 255 at 0.5 m or closer, on the person's side.
+  - Docs updated: `README.md`, `design.md`, `navigation_scenarios.md`.
+- **Watch for**: the wristband doesn't skip people right next to the robot (the social layer skips anyone within
+  0.6 m). If the person holding the handle ever shows up in the camera's view, it will buzz all the time.
+
+### F. Floor marked as obstacles in the local costmap (camera only): tested on the robot, works
+
+**Result after the fix** (robot relaunched with the new camera joint, same read-only checks):
+- The floor fit now gives the camera at 0.608 m and 4.4° down. The model says 0.610 m and 4.6°, so they agree within
+  2 mm and 0.2°.
+- The floor now sits around z = 0. Of the points inside the local costmap, 36805 are just below 0 and 12861 are within
+  0-5 cm; only ~500 are at 5-10 cm (noise).
+- The local costmap's lethal cells are real things now: all 76 held current points, 71 of them above 0.30 m (walls,
+  furniture, people), 4 low objects at 0.10-0.30 m, and only 1 floor-only cell.
 
 - **Seen**: in camera-only mode the local costmap filled with lethal cells on plain floor, while RTAB-Map's map showed
   the floor as free.
@@ -207,6 +247,19 @@ To test, have two people stand 1.5 m apart and run `ros2 topic echo /people`:
 - **One entry**: it's a detection problem. YOLO at 320 px merges people standing side by side, and the tracker's
   1.0 m gate can merge two tracks into one.
 - **Two entries but no strip**: it's a problem in the layer.
+
+Live check on the robot (2026-11-20, over the cable): `/social_perception/tracks` came in at ~6 Hz, but every message
+for 8 s had **one** confirmed track (3.4 m ahead, 0.6 m left). With only one person in `/people`, the layer has no
+pair to draw a strip for, so the problem is upstream of the costmap. Next: two people side by side, ~1.5 m apart and
+2-3 m from the camera, without overlapping in the image. If the tracker still shows one, try a larger YOLO image
+(`--imgsz` 320 -> 480 or 640 in `pete.launch.py`, at more GPU cost). Below ~1.1 m apart the strip can't show anyway:
+the gap is already blocked by the two people's lethal discs and their inflation, which is the intended effect.
+
+Second live check (2026-11-20): two people tracked, **0.75 m apart**, 1.3 m and 1.9 m from the robot. The global
+costmap along the line between them read 99-100 (inscribed/lethal) the whole way, so the gap was fully blocked by the
+people themselves and the 220 strip had nothing to add. The group rule works; it only shows as its own band for
+people ~1.2-2.2 m apart. The tracker was down to ~1.3 messages/s then (~6/s earlier), probably because YOLO is shared
+with Pete's object search or the GPU was busy. That alone makes people lag in the costmaps.
 
 ## Trials
 
@@ -294,3 +347,7 @@ To read the CPU: open `htop`, filter on `controller_server`, and note a rough av
 - F: put `top_plate_camera_joint` back to xyz `0.20 0 0.160`, rpy `0 0 0`.
 - G: just leave `local_obstacles` at its default (`true`); to remove it, take the `sources` rewrites and the argument
   out of `navigation_robot.launch.py`.
+- I: `warn_distance` back to 1.2 and `only_when_moving` back to True in `feedback_node.py` (or set them as parameters).
+- H: back to E (everything position-only): set `goal_behavior_tree:=''` on places_node and make the default trees use
+  `general_goal_checker`. Back to before E: `goal_checker_plugins: ["precise_goal_checker"]` and drop
+  `goal_checker_id` from the trees.
