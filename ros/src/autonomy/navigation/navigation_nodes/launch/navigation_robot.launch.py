@@ -35,6 +35,13 @@ from nav2_common.launch import RewrittenYaml
 LAUNCH_DIR = os.path.dirname(os.path.realpath(__file__))  # navigation_nodes/launch
 SRC_DIR = os.path.abspath(os.path.join(LAUNCH_DIR, '..', '..', '..', '..'))  # ros/src
 NAV2_PARAMS = os.path.join(SRC_DIR, 'autonomy', 'navigation', 'config', 'nav2_params.yaml')
+# Behaviour trees without the Spin / BackUp recoveries: when Nav2 is stuck the robot stops and waits instead of turning
+# on the spot. The params file can't hold a relative path, so the absolute one is written in at launch
+BT_DIR = os.path.join(SRC_DIR, 'autonomy', 'navigation', 'behavior_trees')
+BT_REWRITES = {
+    'bt_navigator.ros__parameters.default_nav_to_pose_bt_xml': os.path.join(BT_DIR, 'navigate_to_pose_no_spin.xml'),
+    'bt_navigator.ros__parameters.default_nav_through_poses_bt_xml': os.path.join(BT_DIR, 'navigate_through_poses_no_spin.xml'),
+}
 # The serial ports. /dev/pioneer and /dev/unilidar only exist when the container maps them (--device ...:/dev/pioneer).
 # With -v /dev:/dev (the README's container, for the camera) they don't, so use the /dev/serial/by-id/ names: they always
 # point at the right USB adapter, whichever /dev/ttyUSB number it got at boot
@@ -81,9 +88,11 @@ def generate_launch_description():
     use_lidar = LaunchConfiguration('use_lidar')
     use_depth_camera = LaunchConfiguration('use_depth_camera')
     depth_sources = 'depth_camera depth_camera_clearing'
+    nav2_params = RewrittenYaml(source_file=NAV2_PARAMS, param_rewrites=BT_REWRITES)
     depth_nav2_params = RewrittenYaml(
         source_file=NAV2_PARAMS,
         param_rewrites={
+            **BT_REWRITES,
             'local_costmap.local_costmap.ros__parameters.voxel_layer.observation_sources': IfElseSubstitution(
                 use_lidar, if_value=f'lidar lidar_clearing {depth_sources}', else_value=depth_sources),
         },
@@ -157,7 +166,7 @@ def generate_launch_description():
                 SetParameter(name='bond_timeout', value=0.0),
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(PathJoinSubstitution([FindPackageShare('nav2_bringup'), 'launch', 'navigation_launch.py'])),
-                    launch_arguments={'params_file': IfElseSubstitution(use_depth_camera, if_value=depth_nav2_params, else_value=NAV2_PARAMS),
+                    launch_arguments={'params_file': IfElseSubstitution(use_depth_camera, if_value=depth_nav2_params, else_value=nav2_params),
                                       'use_sim_time': 'false', 'use_composition': 'False'}.items(),
                 ),
             ],

@@ -34,6 +34,16 @@ docker run --rm -it --name navigoat-dev --network=host --runtime nvidia --gpus a
   -e DISPLAY -v "$PWD:/workspace" -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
 ```
 - More terminals in the same container: `docker exec -it navigoat-dev bash`
+
+TO test with the handle wristband and no lidar (until it gets fixed)
+```bash
+docker run --rm -it --name navigoat-dev --network=host --ipc=host \
+  --runtime nvidia --gpus all --privileged -v /dev:/dev \
+  -v /run/dbus:/run/dbus --security-opt apparmor=unconfined \
+  -e DISPLAY -v "$PWD:/workspace" -w /workspace -v /tmp/.X11-unix:/tmp/.X11-unix:ro navigoat:dev bash
+```
+
+
 - The base and lidar ports are found automatically. For social nav the image needs Pete's extras:
 `docker build -f docker/Dockerfile.dev --build-arg PETE=true -t navigoat:dev .`
 - First time only, build: `cd /workspace && colcon build --packages-ignore unitree_lidar_ros unitree_lidar_sdk --symlink-install`
@@ -46,6 +56,14 @@ source /workspace/install/setup.bash
 NAV=/workspace/ros/src/autonomy/navigation/navigation_nodes/launch/navigation_robot.launch.py
 MAP=/workspace/ros/src/bringup/maps/lab.db      # the map file: a new name = a new map
 ```
+
+if using only the camera we add the flags:
+
+```bash
+use_depth_camera:=true use_lidar:=false
+```
+
+use_depth_camera:=true use_lidar:=false
 
 Then **one** of these (only one launch at a time):
 
@@ -62,7 +80,7 @@ Then **one** of these (only one launch at a time):
 - **A different map**: change `MAP`, e.g. `MAP=/workspace/ros/src/bringup/maps/corridor.db`. A new name starts a new map;
   an existing one is continued (mapping) or used (localisation). Each map keeps its own places (`corridor_places.yaml`).
 - **The motors turn on by themselves** once the base connects (`Connected to Imperial_3097` in the output).
-- **Keyboard** (with `teleop:=true`), 🐳 second terminal: `ros2 run teleop_twist_keyboard teleop_twist_keyboard`
+- **Keyboard** (with `teleop:=true`), second terminal: `ros2 run teleop_twist_keyboard teleop_twist_keyboard`
 - **Map with the keyboard, then navigate**: run with `teleop:=true`, drive around, Ctrl+C (saves the map), then launch
   again with `mode:=localisation`.
 - **In localisation**, the robot must start where the map was started, or get its pose from RViz's **2D Pose Estimate**.
@@ -75,12 +93,12 @@ heavy), `places_file:=...`, `pioneer_port:=...` / `lidar_port:=...` (only if the
 
 ### Just drive with the keyboard (no lidar, no map, no Nav2)
 
-🐳 Only the base and its motors. Not together with a navigation launch (two base drivers on one port both fail):
+Only the base and its motors. Not together with a navigation launch (two base drivers on one port both fail):
 ```bash
 source /workspace/install/setup.bash
 ros2 launch bringup base.launch.py
 ```
-Wait for `Connected to Imperial_3097`, then 🐳 in a second terminal:
+Wait for `Connected to Imperial_3097`, then in a second terminal:
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
@@ -122,8 +140,8 @@ ros2 topic pub --once /navigation/goto         std_msgs/msg/String "{data: kitch
 ros2 topic pub --once /navigation/forget_place std_msgs/msg/String "{data: kitchen}"   # delete it
 ros2 topic pub --once /navigation/cancel       std_msgs/msg/String "{data: ''}"        # stop driving
 ros2 topic pub --once /navigation/goto_point geometry_msgs/msg/PointStamped "{header: {frame_id: map}, point: {x: 1.0, y: 0.0}}"
-ros2 topic echo /navigation/status          # saved:kitchen, going:kitchen, arrived:kitchen, failed:...
-ros2 topic echo /navigation/places --once --qos-durability transient_local   # the list of saved places
+ros2 topic echo /navigation/status std_msgs/msg/String --field data   # saved:kitchen, going:kitchen, arrived:kitchen, failed:...
+ros2 topic echo /navigation/places std_msgs/msg/String --once --qos-durability transient_local --qos-reliability reliable   # the saved places
 ```
 
 By voice: "Pete, remember this place as the kitchen", "Pete, take me to the kitchen".
@@ -131,7 +149,7 @@ By voice: "Pete, remember this place as the kitchen", "Pete, take me to the kitc
 ### Test going to an object (fake middleman + perception)
 
 🐳 First switch to object mode (otherwise the object position is ignored), then send where the object is. The robot
-stops 0.8 m before it, facing it. Watch `ros2 topic echo /navigation/status`: `waiting:chair` → `going:chair` →
+stops 0.8 m before it. Watch `ros2 topic echo /navigation/status std_msgs/msg/String --field data`: `waiting:chair` → `going:chair` →
 `arrived:chair`.
 
 ```bash
@@ -152,18 +170,21 @@ Don't click with Publish Point: a click adds a test person there (click again to
 ```bash
 ros2 topic hz /odom                                     # base: ~10 Hz
 ros2 topic hz /unilidar/cloud                           # lidar: ~10 Hz
-ros2 topic echo /people --no-daemon                     # people on the map (social:=true)
-ros2 topic echo /social_perception/tracks --no-daemon --field data   # what the camera tracker sees
+ros2 topic echo /people navigoat_msgs/msg/People --no-daemon                     # people on the map (social:=true)
+ros2 topic echo /social_perception/tracks std_msgs/msg/String --no-daemon --field data   # what the camera tracker sees
 ```
-`--no-daemon` avoids `ros2 topic echo` wrongly saying "not published yet" after restarts. If `hz` shows nothing right
-after a restart, run `ros2 daemon stop` and try again.
+Always give the message type after the topic name, as above. Without it, `ros2 topic echo` first has to look the type
+up, and when the Jetson is busy that can take too long: it then fails with `Could not determine the type for the
+passed topic`, even though the topic is published. `--no-daemon` avoids it wrongly saying "not published yet" after
+restarts. If `hz` shows nothing right after a restart, run `ros2 daemon stop` and try again.
 
 **Vibrations** (what navigation sends to the devices), 🐳:
 ```bash
-ros2 topic echo /handle/vibration --no-daemon --field data      # handle: the next turn on the path
-ros2 topic echo /wristband/vibration --no-daemon --field data   # wristband: the closest person
+ros2 topic echo /handle/vibration std_msgs/msg/UInt8MultiArray --no-daemon --field data      # handle: the next turn on the path
+ros2 topic echo /wristband/vibration std_msgs/msg/UInt8MultiArray --no-daemon --field data   # wristband: the closest person
 ```
-Each message is `[side, strength]`: side `0` = left, `1` = right, strength `0`–`255` (`0` = off).
+Each message is `[side, strength]`: side `0` = left, `1` = right, strength `0`–`255` (`0` = off). It prints as
+`array('B', [1, 140])`; `array('B', [0, 0])` means no vibration.
 - **Handle**: only while driving a goal, when a turn on the path comes within 2 m. Sharper turn = stronger.
 - **Wristband**: only while the robot moves, when a person is within 1.2 m (`social:=true`, or a test person clicked
   with Publish Point). Closer = stronger, 255 at 0.5 m.

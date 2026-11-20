@@ -8,6 +8,9 @@ The saved places are kept in a YAML file (places_file) that looks like:
 
 They only make sense on the map they were saved on: keep the file next to that map, and start again if it is rebuilt.
 
+Only a goal's position matters: the robot arrives in whatever direction is convenient (Nav2's goal checker ignores the
+heading). A place's saved yaw is only used for its arrow in RViz.
+
     python3 places_node.py --ros-args -p places_file:=/tmp/places.yaml -p use_sim_time:=true
 """
 
@@ -57,16 +60,16 @@ def set_yaw(q, yaw):
 
 
 def stop_short_of(robot, target, distance):
-    """Where to stop, (x, y, yaw), to end up `distance` metres before target, coming from robot (x, y, yaw) and facing
-    target. If the robot is already that close, it stays where it is and only turns to face it."""
-    # this is for objects: we don't want to drive INTO the chair, we want to stop a bit before it, looking at it
+    """Where to stop, (x, y, yaw), to end up `distance` metres before target, coming from robot (x, y, yaw). The yaw
+    points at the target, but arrival doesn't check it. If the robot is already that close, it stays where it is."""
+    # this is for objects: we don't want to drive INTO the chair, we want to stop a bit before it
     # the vector from the robot to the target, and how far away it is
     dx, dy = target[0] - robot[0], target[1] - robot[1]
     gap = math.hypot(dx, dy)
     # the target is basically where we already are: just stay
     if gap < 1e-3:
         return robot
-    # already closer than `distance`: don't drive, only turn to face it
+    # already closer than `distance`: stay here
     if gap <= distance:
         return robot[0], robot[1], math.atan2(dy, dx)
     # otherwise drive along the straight line to the target, but stop `distance` before it.
@@ -212,13 +215,15 @@ class PlacesNode(Node):
     # --- driving with Nav2 ---
 
     def drive_to(self, label, spoken, x, y, yaw):
-        """Send Nav2 to (x, y) on the map, arriving facing yaw. A new goal replaces the one being driven to."""
+        """Send Nav2 to (x, y) on the map. A new goal replaces the one being driven to. Nav2 needs a heading in the goal,
+        so yaw is the direction that's convenient to arrive in, but arrival only checks the position (the goal
+        checker's yaw_goal_tolerance covers every direction)."""
         # if Nav2 isn't running there's nothing we can do (we wait 2 s max for it)
         if not self.navigator.wait_for_server(timeout_sec=2.0):
             self.status('error:Nav2 is not running (no navigate_to_pose action server)')
             self.say("I can't drive right now.")
             return
-        # the goal = a position and a heading on the map
+        # the goal = a position on the map, plus the heading Nav2 needs (not checked on arrival)
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = self.map_frame
         goal.pose.pose.position.x, goal.pose.pose.position.y = x, y
@@ -284,8 +289,12 @@ class PlacesNode(Node):
             self.status(f'unknown:{name}')
             self.say(f"I don't know where the {name} is yet.")
             return
-        # drive to where the robot was when the place was saved, facing the same way
-        self.drive_to(name, f'the {name}', place['x'], place['y'], place['yaw'])
+        # drive to where the robot was when the place was saved. the way it faced then doesn't matter: the goal's
+        # heading is the direction from the robot to the place, the way it naturally arrives. (the sim's planner plans
+        # to the exact heading, so the saved one could make it loop round at the end.) arrival only checks the position
+        robot = self.robot_pose()
+        yaw = math.atan2(place['y'] - robot[1], place['x'] - robot[0]) if robot else place['yaw']
+        self.drive_to(name, f'the {name}', place['x'], place['y'], yaw)
 
     # --- topics ---
     # these get called when a message arrives on the topics we subscribed to in __init__
@@ -331,11 +340,11 @@ class PlacesNode(Node):
         robot = self.robot_pose()
         if point is None or robot is None:
             return
-        yaw = math.atan2(point[1] - robot[1], point[0] - robot[0])  # arrive facing the way it drove
+        yaw = math.atan2(point[1] - robot[1], point[0] - robot[0])  # the way it drives there (not checked on arrival)
         self.drive_to(f'point {point[0]:.2f},{point[1]:.2f}', 'that point', point[0], point[1], yaw)
 
     def on_object(self, msg):
-        """Perception found the object: in object mode, drive to object_standoff metres short of it, facing it."""
+        """Perception found the object: in object mode, drive to object_standoff metres short of it."""
         name = self.waiting_for
         if name is None:
             # perception also gets tested on its own, and we only want to drive in object mode
@@ -346,7 +355,7 @@ class PlacesNode(Node):
         if point is None or robot is None:
             return
         self.waiting_for = None  # got it, stop waiting
-        x, y, yaw = stop_short_of(robot, point, self.object_standoff)  # stop before it, facing it
+        x, y, yaw = stop_short_of(robot, point, self.object_standoff)  # stop before it
         self.get_logger().info(f'The {name} is at ({point[0]:.2f}, {point[1]:.2f}), stopping at ({x:.2f}, {y:.2f}).')
         self.drive_to(name, f'the {name}', x, y, yaw)
 

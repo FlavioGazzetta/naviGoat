@@ -8,7 +8,7 @@ Gazebo tests is in [README_archive.md](README_archive.md).
 | Topic | Type | Who sends it | What we do with it | Node |
 | --- | --- | --- | --- | --- |
 | `/middleman/mode` | `std_msgs/String` (JSON) | middleman | `location` → drive to that saved place. `object` → stop and wait for `/object_mapping`. A stop or any other mode → stop driving | places_node |
-| `/object_mapping` | `geometry_msgs/PointStamped` | perception | where the object is (object mode only): we drive to 0.8 m before it, facing it | places_node |
+| `/object_mapping` | `geometry_msgs/PointStamped` | perception | where the object is (object mode only): we drive to 0.8 m before it | places_node |
 | `/navigation/save_place` | `std_msgs/String` | anyone | save where the robot is now under that name | places_node |
 | `/navigation/forget_place` | `std_msgs/String` | anyone | delete that saved place | places_node |
 | `/navigation/goto` | `std_msgs/String` | anyone | drive to that saved place | places_node |
@@ -68,7 +68,8 @@ places:
   kitchen: {x: 1.25, y: -3.4, yaw: 1.571}
 ```
 
-They only fit the map they were saved on.
+They only fit the map they were saved on. Only `x` and `y` are used to drive there: the robot arrives in whatever
+direction is convenient (`yaw` is only the arrow in RViz).
 
 ## The social rules
 
